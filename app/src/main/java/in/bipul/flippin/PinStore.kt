@@ -27,6 +27,14 @@ class PinStore(private val preferences: SharedPreferences) {
 
     fun delete(id: String) = write(read().filterNot { it.id == id })
 
+    fun rename(id: String, name: String) {
+        val trimmed = name.trim()
+        require(trimmed.length in 1..60) { "Pin name must contain 1 to 60 characters" }
+        val pins = read()
+        require(pins.any { it.id == id }) { "Saved pin does not exist" }
+        write(pins.map { if (it.id == id) it.copy(name = trimmed) else it })
+    }
+
     private fun write(pins: List<SavedPin>) {
         val array = JSONArray()
         pins.forEach { pin ->

@@ -8,81 +8,171 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
+        android:focusableInTouchMode="true"
         android:padding="20dp">
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textColor="@color/accent"
-            android:textSize="38sp"
-            android:textStyle="bold" />
-        <TextView style="@style/SectionTitle" android:text="@string/tagline" />
-        <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/intro" />
-        <LinearLayout style="@style/Card">
-            <TextView
-                android:id="@+id/status"
-                style="@style/SectionTitle"
-                android:accessibilityLiveRegion="polite"
-                android:text="@string/idle"
-                android:textSize="16sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:gravity="center_vertical" android:orientation="horizontal">
+            <ImageView android:layout_width="56dp" android:layout_height="56dp"
+                android:layout_marginEnd="14dp" android:background="@drawable/hero"
+                android:padding="14dp" android:src="@drawable/ic_pin"
+                android:importantForAccessibility="no" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical">
+                <TextView style="@style/Body" android:text="@string/workspace_label"
+                    android:textColor="@color/accent" android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium" android:letterSpacing="0.14" />
+                <TextView style="@style/SectionTitle" android:text="@string/app_name"
+                    android:textSize="30sp" />
+            </LinearLayout>
+        </LinearLayout>
+        <TextView style="@style/Body" android:layout_marginTop="14dp" android:text="@string/intro" />
+
+        <LinearLayout style="@style/Card" android:background="@drawable/hero">
+            <TextView android:id="@+id/status" style="@style/SectionTitle"
+                android:accessibilityLiveRegion="polite" android:text="@string/idle"
+                android:textColor="@color/hero_text" android:textSize="13sp"
+                android:letterSpacing="0.08" />
             <TextView android:id="@+id/status_detail" style="@style/Body"
-                android:layout_marginTop="8dp" android:text="@string/idle_detail" />
-            <TextView android:id="@+id/error" style="@style/Body"
-                android:accessibilityLiveRegion="polite"
-                android:layout_marginTop="8dp" android:textColor="@color/error"
-                android:visibility="gone" />
-            <Button android:id="@+id/stop"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="8dp" android:text="@string/stop" android:enabled="false" />
+                android:layout_marginTop="12dp" android:text="@string/idle_detail"
+                android:textColor="@color/hero_text" android:textSize="17sp" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="18dp" android:orientation="horizontal">
+                <TextView style="@style/Body" android:layout_width="0dp" android:layout_weight="1"
+                    android:text="@string/provider_stat" android:textColor="@color/hero_muted"
+                    android:textSize="11sp" />
+                <TextView style="@style/Body" android:layout_width="0dp" android:layout_weight="1"
+                    android:text="@string/refresh_stat" android:textColor="@color/hero_muted"
+                    android:gravity="center" android:textSize="11sp" />
+                <TextView style="@style/Body" android:layout_width="0dp" android:layout_weight="1"
+                    android:text="@string/accuracy_stat" android:textColor="@color/hero_muted"
+                    android:gravity="end" android:textSize="11sp" />
+            </LinearLayout>
+            <Button android:id="@+id/stop" style="@style/ActionButton"
+                android:layout_marginTop="16dp" android:text="@string/stop"
+                android:enabled="false" android:visibility="gone" />
         </LinearLayout>
-        <LinearLayout style="@style/Card">
-            <TextView style="@style/SectionTitle" android:text="@string/destination" />
-            <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/coordinate_hint" />
-            <TextView style="@style/Body" android:layout_marginTop="16dp"
+        <TextView android:id="@+id/error" style="@style/Body"
+            android:accessibilityLiveRegion="polite" android:layout_marginTop="12dp"
+            android:padding="14dp" android:background="@drawable/soft_button"
+            android:textColor="@color/error" android:visibility="gone" />
+
+        <LinearLayout android:id="@+id/pad_card" style="@style/Card">
+            <TextView style="@style/SectionTitle" android:text="@string/place_pin" />
+            <TextView style="@style/Body" android:layout_marginTop="6dp" android:text="@string/pad_hint" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" android:orientation="horizontal">
+                <Button android:id="@+id/scale_world" style="@style/SegmentButton" android:text="@string/scale_world" />
+                <Button android:id="@+id/scale_area" style="@style/SegmentButton"
+                    android:layout_marginStart="6dp" android:text="@string/scale_area" />
+                <Button android:id="@+id/scale_fine" style="@style/SegmentButton"
+                    android:layout_marginStart="6dp" android:text="@string/scale_fine" />
+            </LinearLayout>
+            <FrameLayout android:layout_width="match_parent" android:layout_height="320dp"
+                android:layout_marginTop="12dp">
+                <in.bipul.flippin.CoordinateMapView android:id="@+id/coordinate_pad"
+                    android:layout_width="match_parent" android:layout_height="match_parent" />
+                <Button android:id="@+id/map_attribution" style="@style/ActionButton"
+                    android:layout_width="wrap_content" android:layout_height="48dp"
+                    android:layout_gravity="bottom|end" android:background="@color/surface"
+                    android:textSize="11sp" android:text="@string/map_attribution" />
+            </FrameLayout>
+            <TextView style="@style/Body" android:text="@string/map_privacy" android:textSize="12sp" />
+            <Button android:id="@+id/map_retry" style="@style/ActionButton"
+                android:layout_marginTop="8dp" android:text="@string/map_retry"
+                android:visibility="gone" android:accessibilityLiveRegion="polite" />
+            <TextView android:id="@+id/map_limit" style="@style/Body"
+                android:layout_marginTop="8dp" android:text="@string/map_limit"
+                android:visibility="gone" android:accessibilityLiveRegion="polite" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <TextView android:id="@+id/preview" style="@style/Body"
+                    android:layout_width="0dp" android:layout_weight="1"
+                    android:fontFamily="monospace" android:textColor="@color/text"
+                    android:textSize="13sp" android:text="@string/pad_empty" />
+                <ImageButton android:id="@+id/copy_coordinates"
+                    android:layout_width="48dp" android:layout_height="48dp"
+                    android:layout_marginStart="8dp" android:background="@drawable/soft_button"
+                    android:src="@drawable/ic_copy" android:padding="12dp"
+                    android:contentDescription="@string/copy_coordinates" android:enabled="false" />
+            </LinearLayout>
+            <TextView android:id="@+id/nudge_step" style="@style/Body"
+                android:layout_marginTop="8dp" android:textSize="12sp" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:orientation="horizontal">
+                <Button android:id="@+id/nudge_north" style="@style/SegmentButton"
+                    android:background="@drawable/soft_button" android:textColor="@color/accent"
+                    android:text="@string/nudge_north" />
+                <Button android:id="@+id/nudge_south" style="@style/SegmentButton"
+                    android:layout_marginStart="6dp" android:background="@drawable/soft_button"
+                    android:textColor="@color/accent" android:text="@string/nudge_south" />
+                <Button android:id="@+id/nudge_west" style="@style/SegmentButton"
+                    android:layout_marginStart="6dp" android:background="@drawable/soft_button"
+                    android:textColor="@color/accent" android:text="@string/nudge_west" />
+                <Button android:id="@+id/nudge_east" style="@style/SegmentButton"
+                    android:layout_marginStart="6dp" android:background="@drawable/soft_button"
+                    android:textColor="@color/accent" android:text="@string/nudge_east" />
+            </LinearLayout>
+            <TextView style="@style/Body" android:layout_marginTop="18dp"
                 android:labelFor="@id/latitude" android:text="@string/latitude" />
-            <EditText android:id="@+id/latitude"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:minHeight="56dp" android:importantForAutofill="no"
-                android:inputType="numberDecimal|numberSigned" android:singleLine="true"
-                android:imeOptions="actionNext" android:selectAllOnFocus="true" />
-            <TextView style="@style/Body" android:layout_marginTop="8dp"
+            <EditText android:id="@+id/latitude" style="@style/CoordinateField"
+                android:importantForAutofill="no" android:imeOptions="actionNext" />
+            <TextView style="@style/Body" android:layout_marginTop="12dp"
                 android:labelFor="@id/longitude" android:text="@string/longitude" />
-            <EditText android:id="@+id/longitude"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:minHeight="56dp" android:importantForAutofill="no"
-                android:inputType="numberDecimal|numberSigned" android:singleLine="true"
-                android:imeOptions="actionDone" android:selectAllOnFocus="true" />
-            <Button android:id="@+id/start"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="12dp" android:text="@string/start" />
-            <Button android:id="@+id/save_pin"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="@string/save_pin" />
+            <EditText android:id="@+id/longitude" style="@style/CoordinateField"
+                android:importantForAutofill="no" android:imeOptions="actionDone" />
+            <TextView android:id="@+id/draft_hint" style="@style/Body"
+                android:layout_marginTop="12dp" android:textSize="12sp" android:text="@string/draft_idle" />
+            <Button android:id="@+id/start" style="@style/ActionButton"
+                android:layout_marginTop="16dp" android:background="@drawable/primary_button"
+                android:textColor="@color/background" android:text="@string/start" />
+            <Button android:id="@+id/save_pin" style="@style/ActionButton"
+                android:layout_marginTop="10dp" android:text="@string/save_pin" />
         </LinearLayout>
+
         <LinearLayout style="@style/Card">
-            <TextView style="@style/SectionTitle" android:text="@string/saved_pins" />
-            <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/saved_hint" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView style="@style/SectionTitle" android:layout_width="0dp"
+                    android:layout_weight="1" android:text="@string/saved_pins" />
+                <TextView android:id="@+id/pin_count" style="@style/Body"
+                    android:layout_width="wrap_content" android:textColor="@color/accent" android:textSize="12sp" />
+            </LinearLayout>
+            <TextView style="@style/Body" android:layout_marginTop="6dp" android:text="@string/saved_hint" />
             <LinearLayout android:id="@+id/pins"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="12dp" android:orientation="vertical" />
+                android:layout_marginTop="14dp" android:orientation="vertical" />
         </LinearLayout>
+
         <LinearLayout style="@style/Card">
             <TextView style="@style/SectionTitle" android:text="@string/setup" />
-            <TextView android:id="@+id/setup_status" style="@style/Body"
-                android:layout_marginTop="8dp" />
-            <TextView style="@style/Body" android:layout_marginTop="12dp" android:text="@string/setup_instructions" />
-            <Button android:id="@+id/developer_options"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="8dp" android:text="@string/developer_options" />
-            <Button android:id="@+id/location_settings"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="@string/location_settings" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/setup_status" style="@style/Body"
+                    android:layout_width="0dp" android:layout_weight="1" />
+                <Button android:id="@+id/setup_toggle" style="@style/ActionButton"
+                    android:layout_width="wrap_content" android:layout_height="48dp"
+                    android:paddingStart="12dp" android:paddingEnd="12dp" android:text="@string/setup_expand" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/setup_details" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+                <TextView android:id="@+id/check_mock" style="@style/Body" android:layout_marginTop="16dp" />
+                <TextView android:id="@+id/check_location" style="@style/Body" android:layout_marginTop="8dp" />
+                <TextView android:id="@+id/check_permission" style="@style/Body" android:layout_marginTop="8dp" />
+                <TextView style="@style/Body" android:layout_marginTop="16dp" android:text="@string/setup_instructions" />
+                <Button android:id="@+id/developer_options" style="@style/ActionButton"
+                    android:layout_marginTop="16dp" android:text="@string/developer_options" />
+                <Button android:id="@+id/location_settings" style="@style/ActionButton"
+                    android:layout_marginTop="8dp" android:text="@string/location_settings" />
+            </LinearLayout>
         </LinearLayout>
         <LinearLayout style="@style/Card">
-            <TextView style="@style/SectionTitle" android:text="@string/limitations_title" />
-            <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/limitations" />
+            <TextView style="@style/SectionTitle" android:text="@string/limitations_title" android:textSize="16sp" />
+            <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/limitations"
+                android:textSize="12sp" />
         </LinearLayout>
         <TextView android:id="@+id/version" style="@style/Body"
-            android:layout_marginTop="20dp" android:gravity="center" />
+            android:layout_marginTop="24dp" android:layout_marginBottom="12dp"
+            android:textSize="11sp" android:gravity="center" />
     </LinearLayout>
 </ScrollView>

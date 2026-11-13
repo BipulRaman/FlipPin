@@ -14,7 +14,7 @@
     <style name="SectionTitle">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:textSize">20sp</item>
+        <item name="android:textSize">21sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:textColor">@color/text</item>
     </style>
@@ -28,9 +28,42 @@
     <style name="Card">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">16dp</item>
+        <item name="android:layout_marginTop">20dp</item>
         <item name="android:padding">20dp</item>
         <item name="android:orientation">vertical</item>
         <item name="android:background">@drawable/card</item>
+    </style>
+    <style name="ActionButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:background">@drawable/soft_button</item>
+        <item name="android:textColor">@color/accent</item>
+    </style>
+    <style name="SegmentButton" parent="ActionButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">@drawable/segment</item>
+        <item name="android:textColor">@color/segment_text</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+    <style name="CoordinateField">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:background">@drawable/field</item>
+        <item name="android:importantForAutofill">no</item>
+        <item name="android:inputType">numberDecimal|numberSigned</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:selectAllOnFocus">true</item>
     </style>
 </resources>
