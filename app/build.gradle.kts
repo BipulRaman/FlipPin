@@ -7,7 +7,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "in.bipul.flippin"
+        applicationId = "com.app0123456789.gps"
         minSdk = 26
         targetSdk = 37
         versionCode = providers.gradleProperty("versionCode").map(String::toInt).getOrElse(1)

@@ -28,7 +28,7 @@ class CoordinateMapView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs) {
     var onCoordinateChanged: ((Coordinates) -> Unit)? = null
     var onTileFailureChanged: ((Boolean) -> Unit)? = null
-    var scale: PinScale = PinScale.WORLD
+    var pace: Pace = Pace.WALK
         private set
     internal var webView: WebView? = null
         private set
@@ -120,13 +120,13 @@ class CoordinateMapView @JvmOverloads constructor(
         if (!handlingPick) sendState(recenter && coordinates != null)
     }
 
-    fun setScale(newScale: PinScale) {
-        scale = newScale
-        zoom = when (scale) {
-            PinScale.WORLD -> 2.0
-            PinScale.AREA -> 13.0
-            PinScale.FINE -> 18.0
-        }
+    fun setPace(newPace: Pace, focus: Boolean) {
+        pace = newPace
+        if (focus && point != null) zoomTo(newPace.zoom)
+    }
+
+    fun zoomTo(level: Double) {
+        zoom = level
         point?.let {
             cameraLatitude = it.latitude.coerceIn(-MAP_LATITUDE_LIMIT, MAP_LATITUDE_LIMIT)
             cameraLongitude = it.longitude
@@ -280,12 +280,12 @@ class CoordinateMapView @JvmOverloads constructor(
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val current = point ?: return super.onKeyDown(keyCode, event)
-        val step = scale.step
+        val step = pace.meters.toDouble()
         val selected = when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_UP -> current.nudged(step, 0.0)
-            KeyEvent.KEYCODE_DPAD_DOWN -> current.nudged(-step, 0.0)
-            KeyEvent.KEYCODE_DPAD_LEFT -> current.nudged(0.0, -step)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> current.nudged(0.0, step)
+            KeyEvent.KEYCODE_DPAD_UP -> current.moved(step, 0.0)
+            KeyEvent.KEYCODE_DPAD_DOWN -> current.moved(-step, 0.0)
+            KeyEvent.KEYCODE_DPAD_LEFT -> current.moved(0.0, -step)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> current.moved(0.0, step)
             else -> return super.onKeyDown(keyCode, event)
         }
         setCoordinates(selected)
@@ -299,6 +299,7 @@ class CoordinateMapView @JvmOverloads constructor(
 
     companion object {
         const val MAP_LATITUDE_LIMIT = 85.0511287798066
+        const val AREA_ZOOM = 13.0
         private const val TAG = "CoordinateMap"
         private const val ASSET_HOST = "appassets.androidplatform.net"
         private const val CSP = "default-src 'none'; script-src 'self'; " +

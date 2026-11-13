@@ -10,8 +10,8 @@
     <color name="hero_start">#142E3F</color>
     <color name="hero_end">#204C57</color>
     <color name="hero_text">#FFFFFF</color>
-    <color name="hero_muted">#C6DDE3</color>
-    <color name="hero_accent">#80EBD0</color>
     <color name="success">#137546</color>
+    <color name="success_soft">#D7F0E2</color>
+    <color name="hint">#7D929C</color>
     <color name="error">#BA1A1A</color>
 </resources>

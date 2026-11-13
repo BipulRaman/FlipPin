@@ -36,6 +36,7 @@ import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowInsets
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -47,6 +48,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListener {
     private lateinit var state: SharedPreferences
@@ -79,6 +81,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private var updatingFields = false
     private var selectedPinId: String? = null
     private var setupExpanded = false
+    private var imeVisible = false
+    private var setupReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,13 +92,17 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             if (Build.VERSION.SDK_INT >= 30) {
                 val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
                 view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                imeVisible = insets.isVisible(WindowInsets.Type.ime())
             } else {
                 @Suppress("DEPRECATION")
                 view.setPadding(
                     insets.systemWindowInsetLeft, insets.systemWindowInsetTop,
                     insets.systemWindowInsetRight, insets.systemWindowInsetBottom
                 )
+                @Suppress("DEPRECATION")
+                imeVisible = insets.systemWindowInsetBottom > dp(120)
             }
+            renderActionBar()
             insets
         }
         state = getSharedPreferences(MockLocationService.STATE, MODE_PRIVATE)
@@ -103,7 +111,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         longitude = findViewById(R.id.longitude)
         pad = findViewById(R.id.coordinate_pad)
         locationSearch = LocationSearch(Geocoder(this, Locale.ENGLISH))
-        findViewById<Button>(R.id.search_location).setOnClickListener { searchLocation() }
+        findViewById<View>(R.id.search_location).setOnClickListener { searchLocation() }
+        findViewById<EditText>(R.id.location_query).setOnFocusChangeListener { _, _ -> renderActionBar() }
         findViewById<EditText>(R.id.location_query).setOnEditorActionListener { _, action, _ ->
             if (action == EditorInfo.IME_ACTION_SEARCH) {
                 searchLocation()
@@ -129,6 +138,22 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             }
             movementMethod = LinkMovementMethod.getInstance()
         }
+        findViewById<TextView>(R.id.online_privacy).apply {
+            val link = getString(R.string.online_privacy_link)
+            text = SpannableString(getString(R.string.online_privacy)).apply {
+                val start = lastIndexOf(link)
+                if (start >= 0) setSpan(object : ClickableSpan() {
+                    override fun onClick(widget: View) = showAbout()
+                }, start, start + link.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            movementMethod = LinkMovementMethod.getInstance()
+        }
+        findViewById<View>(R.id.info).setOnClickListener { showAbout() }
+        findViewById<View>(R.id.version).setOnClickListener { showAbout() }
+        findViewById<View>(R.id.manage_pins).setOnClickListener { managePins() }
+        findViewById<View>(R.id.online_map).layoutParams.height = resources.displayMetrics.let {
+            (it.heightPixels * 0.36f).toInt().coerceIn(dp(200), dp(280))
+        }
         latitude.setText(state.getString(MockLocationService.LATITUDE, ""))
         longitude.setText(state.getString(MockLocationService.LONGITUDE, ""))
         setupExpanded = savedInstanceState?.getBoolean("setup_expanded") ?: false
@@ -140,7 +165,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         findViewById<Button>(R.id.stop).setOnClickListener {
             stopService(Intent(this, MockLocationService::class.java))
         }
-        findViewById<Button>(R.id.save_pin).setOnClickListener { readCoordinates()?.let { savePin(it) } }
+        findViewById<View>(R.id.save_pin).setOnClickListener { readCoordinates()?.let { savePin(it) } }
         findViewById<Button>(R.id.developer_options).setOnClickListener {
             openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
         }
@@ -163,12 +188,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         latitude.addTextChangedListener(watcher)
         longitude.addTextChangedListener(watcher)
-        val initialScale = PinScale.entries.firstOrNull { it.name == savedInstanceState?.getString("pad_scale") }
-            ?: PinScale.WORLD
-        for ((id, scale) in scaleButtons()) {
-            findViewById<Button>(id).setOnClickListener { selectScale(scale) }
+        val initialPace = Pace.entries.firstOrNull { it.name == savedInstanceState?.getString("pace") }
+            ?: Pace.WALK
+        for ((id, pace) in paceButtons()) {
+            findViewById<Button>(id).setOnClickListener { selectPace(pace, focusMap = true) }
         }
-        selectScale(initialScale)
+        selectPace(initialPace, focusMap = false)
         findViewById<Button>(R.id.nudge_north).setOnClickListener { nudge(1, 0) }
         findViewById<Button>(R.id.nudge_south).setOnClickListener { nudge(-1, 0) }
         findViewById<Button>(R.id.nudge_west).setOnClickListener { nudge(0, -1) }
@@ -222,7 +247,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("pad_scale", pad.scale.name)
+        outState.putString("pace", pad.pace.name)
         outState.putString("selected_pin", selectedPinId)
         outState.putBoolean("setup_expanded", setupExpanded)
         pad.saveCamera(outState)
@@ -260,7 +285,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         searching = true
         val request = ++searchGeneration
         input.isEnabled = false
-        findViewById<Button>(R.id.search_location).isEnabled = false
+        findViewById<View>(R.id.search_location).isEnabled = false
         showSearchStatus(getString(R.string.search_loading))
         getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
         locationSearch.search(query) { result ->
@@ -268,7 +293,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 if (!isDestroyed && !isFinishing && online && request == searchGeneration) {
                     searching = false
                     input.isEnabled = true
-                    findViewById<Button>(R.id.search_location).isEnabled = true
+                    findViewById<View>(R.id.search_location).isEnabled = true
                     result.fold(
                         onSuccess = { places -> renderSearchResults(places) },
                         onFailure = { error ->
@@ -299,7 +324,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 }
                 clearFocus()
             }
-            findViewById<Button>(R.id.search_location).isEnabled = true
+            findViewById<View>(R.id.search_location).isEnabled = true
             findViewById<View>(R.id.search_status).visibility = View.GONE
             findViewById<LinearLayout>(R.id.search_results).removeAllViews()
         }
@@ -307,7 +332,20 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val visibility = if (online) View.VISIBLE else View.GONE
         findViewById<View>(R.id.online_search).visibility = visibility
         findViewById<View>(R.id.online_map).visibility = visibility
-        findViewById<TextView>(R.id.pad_hint).setText(if (online) R.string.pad_hint else R.string.offline_hint)
+        findViewById<TextView>(R.id.pad_hint).apply {
+            setText(if (online) R.string.pad_hint else R.string.offline_hint)
+            if (online) {
+                background = null
+                setPadding(0, 0, 0, 0)
+                textSize = 12f
+                setTextColor(getColor(R.color.muted))
+            } else {
+                setBackgroundResource(R.drawable.soft_button)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                textSize = 13f
+                setTextColor(getColor(R.color.text))
+            }
+        }
         pad.setOnline(online)
         updatePreview(recenterPad = false)
     }
@@ -327,21 +365,25 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             results.addView(TextView(this).apply {
                 text = place.name
                 textSize = 14f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER_VERTICAL
                 setTextColor(getColor(R.color.text))
                 setBackgroundResource(R.drawable.pin_card)
-                setPadding(dp(12), dp(12), dp(12), dp(12))
+                setPadding(dp(12), dp(8), dp(12), dp(8))
                 minimumHeight = dp(48)
                 isFocusable = true
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(6) }
+                ).apply { topMargin = dp(4) }
                 setOnClickListener {
                     setCoordinateInputs(place.coordinates)
-                    selectScale(PinScale.AREA)
+                    pad.zoomTo(CoordinateMapView.AREA_ZOOM)
                     results.removeAllViews()
                     showSearchStatus(getString(R.string.search_selected, place.name))
                     this@MainActivity.findViewById<EditText>(R.id.location_query).clearFocus()
-                    pad.requestRectangleOnScreen(Rect(0, 0, pad.width, pad.height), false)
+                    this@MainActivity.findViewById<ScrollView>(R.id.content_scroll)
+                        .smoothScrollTo(0, this@MainActivity.findViewById<View>(R.id.online_map).top)
                 }
             })
         }
@@ -385,11 +427,13 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         if (!mockAllowed()) {
             showError(getString(R.string.mock_not_ready))
             setSetupExpanded(true)
+            findViewById<ScrollView>(R.id.content_scroll).smoothScrollTo(0, 0)
             return
         }
         if (!locationEnabled()) {
             showError(getString(R.string.location_off))
             setSetupExpanded(true)
+            findViewById<ScrollView>(R.id.content_scroll).smoothScrollTo(0, 0)
             return
         }
         val permissions = mutableListOf<String>()
@@ -445,15 +489,17 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val running = MockLocationService.isRunning && state.getBoolean(MockLocationService.RUNNING, false)
         findViewById<TextView>(R.id.status).apply {
             setText(if (running) R.string.active else R.string.idle)
-            setTextColor(getColor(if (running) R.color.hero_accent else R.color.hero_muted))
+            isActivated = running
+            setTextColor(getColor(if (running) R.color.success else R.color.muted))
         }
         val point = Coordinates.parse(
             state.getString(MockLocationService.LATITUDE, "").orEmpty(),
             state.getString(MockLocationService.LONGITUDE, "").orEmpty()
         )
-        findViewById<TextView>(R.id.status_detail).text =
-            if (running && point != null) getString(R.string.active_coordinates, point.display())
-            else getString(R.string.idle_detail)
+        findViewById<TextView>(R.id.status_detail).apply {
+            text = point?.takeIf { running }?.let { getString(R.string.active_coordinates, it.display()) }
+            visibility = if (running && point != null) View.VISIBLE else View.GONE
+        }
         findViewById<Button>(R.id.stop).apply {
             isEnabled = running
             visibility = if (running) View.VISIBLE else View.GONE
@@ -475,8 +521,37 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 setTextColor(getColor(if (ready) R.color.success else R.color.muted))
             }
         }
-        findViewById<TextView>(R.id.setup_status).text =
-            getString(R.string.setup_progress, checks.count { it.second })
+        val ready = checks.count { it.second }
+        findViewById<TextView>(R.id.setup_status).text = getString(R.string.setup_progress, ready)
+        setupReady = ready == checks.size
+        renderSetupCard()
+    }
+
+    private fun renderSetupCard() {
+        findViewById<View>(R.id.setup_card).visibility =
+            if (setupReady && !setupExpanded) View.GONE else View.VISIBLE
+    }
+
+    private fun renderActionBar() {
+        val searching = imeVisible && findViewById<View>(R.id.location_query).hasFocus()
+        findViewById<View>(R.id.action_bar).visibility = if (searching) View.GONE else View.VISIBLE
+    }
+
+    private fun showAbout() {
+        val message = listOf(
+            getString(R.string.intro), getString(R.string.limitations_title) + "\n" + getString(R.string.limitations), getString(R.string.search_privacy),
+            getString(R.string.map_privacy), getString(R.string.map_retry_help),
+            getString(R.string.version, BuildConfig.VERSION_NAME).substringBefore(" · ")
+        ).joinToString("\n\n")
+        AlertDialog.Builder(this)
+            .setTitle(R.string.about_title)
+            .setMessage(message)
+            .setNeutralButton(R.string.setup_open) { _, _ ->
+                setSetupExpanded(true)
+                findViewById<ScrollView>(R.id.content_scroll).smoothScrollTo(0, 0)
+            }
+            .setPositiveButton(R.string.close, null)
+            .show()
     }
 
     private fun setSetupExpanded(expanded: Boolean) {
@@ -486,6 +561,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             setText(if (expanded) R.string.setup_collapse else R.string.setup_expand)
             isSelected = expanded
         }
+        renderSetupCard()
     }
 
     private fun showError(message: String?) {
@@ -498,20 +574,26 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
     }
 
-    private fun scaleButtons(): List<Pair<Int, PinScale>> = listOf(
-        R.id.scale_world to PinScale.WORLD, R.id.scale_area to PinScale.AREA, R.id.scale_fine to PinScale.FINE
+    private fun paceButtons(): List<Pair<Int, Pace>> = listOf(
+        R.id.pace_walk to Pace.WALK, R.id.pace_run to Pace.RUN, R.id.pace_drive to Pace.DRIVE
     )
 
-    private fun selectScale(scale: PinScale) {
-        pad.setScale(scale)
-        scaleButtons().forEach { (id, value) -> findViewById<Button>(id).isSelected = value == scale }
-        val step = String.format(Locale.ROOT, "%.5f", scale.step).trimEnd('0').trimEnd('.')
-        findViewById<TextView>(R.id.nudge_step).text = getString(R.string.nudge_step, step)
+    private fun selectPace(pace: Pace, focusMap: Boolean) {
+        pad.setPace(pace, focusMap)
+        paceButtons().forEach { (id, value) -> findViewById<Button>(id).isSelected = value == pace }
+        findViewById<TextView>(R.id.nudge_step).text = getString(
+            R.string.nudge_step, pace.meters, pace.secondsPerTap.roundToInt(), pace.kilometersPerHour
+        )
+        listOf(
+            R.id.nudge_north to R.string.nudge_north_desc, R.id.nudge_south to R.string.nudge_south_desc,
+            R.id.nudge_west to R.string.nudge_west_desc, R.id.nudge_east to R.string.nudge_east_desc
+        ).forEach { (id, description) -> findViewById<View>(id).contentDescription = getString(description, pace.meters) }
     }
 
     private fun nudge(north: Int, east: Int) {
         readCoordinates()?.let { point ->
-            setCoordinateInputs(point.nudged(north * pad.scale.step, east * pad.scale.step))
+            val meters = pad.pace.meters.toDouble()
+            setCoordinateInputs(point.moved(north * meters, east * meters))
             pad.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         }
     }
@@ -539,11 +621,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             if (point != null && point.latitude !in
                 -CoordinateMapView.MAP_LATITUDE_LIMIT..CoordinateMapView.MAP_LATITUDE_LIMIT
             ) View.VISIBLE else View.GONE
-        findViewById<TextView>(R.id.preview).text = point?.display() ?: getString(
-            if (latitude.text.isEmpty() && longitude.text.isEmpty()) {
-                if (online) R.string.pad_empty else R.string.offline_empty
-            } else R.string.pad_invalid
-        )
+        findViewById<TextView>(R.id.preview).apply {
+            typeface = if (point != null) Typeface.MONOSPACE else Typeface.DEFAULT
+            text = point?.display() ?: getString(
+                if (latitude.text.isEmpty() && longitude.text.isEmpty()) {
+                    if (online) R.string.pad_empty else R.string.offline_empty
+                } else R.string.pad_invalid
+            )
+        }
         findViewById<ImageButton>(R.id.copy_coordinates).apply {
             isEnabled = point != null
             alpha = if (isEnabled) 1f else 0.4f
@@ -608,93 +693,85 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         container.removeAllViews()
         val saved = pins.read()
         findViewById<TextView>(R.id.pin_count).text = resources.getQuantityString(R.plurals.pin_count, saved.size, saved.size)
+        findViewById<View>(R.id.manage_pins).visibility = if (saved.isEmpty()) View.GONE else View.VISIBLE
         if (saved.isEmpty()) {
-            container.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(18), dp(20), dp(18), dp(20))
-                setBackgroundResource(R.drawable.pin_card)
-                addView(TextView(this@MainActivity).apply {
-                    setText(R.string.pins_empty_title)
-                    setTextColor(getColor(R.color.text))
-                    textSize = 16f
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(TextView(this@MainActivity).apply {
-                    setText(R.string.no_pins)
-                    setTextColor(getColor(R.color.muted))
-                    textSize = 13f
-                    setPadding(0, dp(6), 0, 0)
-                })
+            container.addView(TextView(this).apply {
+                setText(R.string.no_pins)
+                setTextColor(getColor(R.color.muted))
+                textSize = 12f
+                gravity = Gravity.CENTER_VERTICAL
+                minHeight = dp(40)
             })
         }
         saved.forEach { pin ->
-            container.addView(LinearLayout(this).apply {
+            container.addView(TextView(this).apply {
                 tag = pin
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                text = pin.name
+                textSize = 14f
+                maxWidth = dp(180)
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER
                 isFocusable = true
                 isClickable = true
-                contentDescription = getString(R.string.saved_pin_entry, pin.name, pin.coordinates.display())
-                setPadding(dp(12), dp(12), dp(8), dp(12))
+                setTextColor(getColor(R.color.text))
                 setBackgroundResource(R.drawable.pin_card)
+                setPadding(dp(16), 0, dp(16), 0)
+                contentDescription = getString(R.string.saved_pin_entry, pin.name, pin.coordinates.display())
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(8) }
-                addView(ImageView(this@MainActivity).apply {
-                    setImageResource(R.drawable.ic_pin)
-                    imageTintList = ColorStateList.valueOf(getColor(R.color.accent))
-                    setBackgroundResource(R.drawable.soft_button)
-                    setPadding(dp(10), dp(10), dp(10), dp(10))
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) })
-                addView(LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(TextView(this@MainActivity).apply {
-                        text = pin.name
-                        textSize = 15f
-                        setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(getColor(R.color.text))
-                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                    })
-                    addView(TextView(this@MainActivity).apply {
-                        text = pin.coordinates.display()
-                        textSize = 11f
-                        typeface = Typeface.MONOSPACE
-                        setTextColor(getColor(R.color.muted))
-                        setPadding(0, dp(4), 0, 0)
-                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                    })
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(ImageButton(this@MainActivity).apply {
-                    setImageResource(R.drawable.ic_more)
-                    setBackgroundResource(R.drawable.segment)
-                    contentDescription = getString(R.string.pin_actions, pin.name)
-                    setOnClickListener {
-                        AlertDialog.Builder(this@MainActivity)
-                            .setTitle(pin.name)
-                            .setItems(arrayOf(getString(R.string.rename_pin), getString(R.string.delete))) { _, action ->
-                                if (action == 0) savePin(pin.coordinates, pin) else deletePin(pin)
-                            }
-                            .show()
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)
+                ).apply { marginEnd = dp(8) }
+                accessibilityDelegate = object : View.AccessibilityDelegate() {
+                    override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                        super.onInitializeAccessibilityNodeInfo(host, info)
+                        info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+                            AccessibilityNodeInfo.ACTION_LONG_CLICK, getString(R.string.pin_actions, pin.name)
+                        ))
                     }
-                }, LinearLayout.LayoutParams(dp(48), dp(48)))
+                }
                 setOnClickListener {
-                    setCoordinateInputs(pin.coordinates, pin.id)
+                    loadPin(pin)
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    latitude.clearFocus()
-                    longitude.clearFocus()
-                    getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(window.decorView.windowToken, 0)
-                    this@MainActivity.findViewById<ScrollView>(R.id.screen)
-                        .smoothScrollTo(0, this@MainActivity.findViewById<View>(R.id.pad_card).top)
-                    Toast.makeText(this@MainActivity, getString(R.string.pin_loaded, pin.name), Toast.LENGTH_SHORT).show()
                 }
                 setOnLongClickListener {
-                    deletePin(pin)
+                    pinActions(pin)
                     true
                 }
             })
         }
         updatePreview(recenterPad = false)
+    }
+
+    private fun loadPin(pin: SavedPin) {
+        setCoordinateInputs(pin.coordinates, pin.id)
+        latitude.clearFocus()
+        longitude.clearFocus()
+        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(window.decorView.windowToken, 0)
+        Toast.makeText(this, getString(R.string.pin_loaded, pin.name), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun pinActions(pin: SavedPin) {
+        AlertDialog.Builder(this)
+            .setTitle(pin.name)
+            .setItems(arrayOf(getString(R.string.load_pin), getString(R.string.rename_pin), getString(R.string.delete))) { _, action ->
+                when (action) {
+                    0 -> loadPin(pin)
+                    1 -> savePin(pin.coordinates, pin)
+                    else -> deletePin(pin)
+                }
+            }
+            .show()
+    }
+
+    private fun managePins() {
+        val saved = pins.read()
+        if (saved.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.saved_pins)
+            .setItems(saved.map { getString(R.string.saved_pin_entry, it.name, it.coordinates.display()) }
+                .toTypedArray()) { _, index -> pinActions(saved[index]) }
+            .setNegativeButton(R.string.close, null)
+            .show()
     }
 
     private fun deletePin(pin: SavedPin) {

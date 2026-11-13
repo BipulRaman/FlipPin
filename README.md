@@ -1,32 +1,35 @@
-# FlipPin
+# GPS Swap
 
 A small native Android app for **authorized GPS mock-location testing**.
 Search for a destination, choose a point on the interactive map, or enter latitude and longitude,
 save frequently used pins, and simulate a fixed location
 with a visible foreground session and a Stop action.
 
-Android explicitly marks the locations as mocked. FlipPin does not hide that flag,
+Android explicitly marks the locations as mocked. GPS Swap does not hide that flag,
 root the device, bypass app protections, or change IP/cellular location.
 
 ## Features
 
 - Decimal-degree latitude/longitude validation, including negative values and decimal commas.
 - Real-world OpenStreetMap data rendered with English-first street/place labels, pan, pinch/double-tap zoom,
-  tap-to-place and long-press-to-drag pins, World/Area/Fine zoom presets,
-  directional adjustments, a live coordinate preview, and copy-to-clipboard.
+  tap-to-place and long-press-to-drag pins, Walk/Run/Drive movement paces for
+  directional nudges, a live coordinate preview, and copy-to-clipboard.
 - Search cities, addresses, and landmarks; choose from up to five results to preview
   a destination. Tiny, linked map attribution overlays the map without a box.
 - GPS and network test providers refreshed every second with 10 m reported accuracy.
 - Apply different coordinates while a session is running.
-- Named saved-pin cards stored privately on the device; tap to load, use the menu
-  to rename or delete, or long-press to delete.
+- Named saved-pin chips stored privately on the device; tap to load, long-press or use
+  **Manage** to load, rename, or delete.
 - Foreground notification with a Stop action; the session continues when the screen is off
   or you switch apps, subject to Android/OEM process and battery restrictions.
-- Polished light/dark dashboard, collapsible setup checklist, accessible field labels,
-  keyboard-controlled coordinate adjustments, and Android system/keyboard insets.
+- Compact, map-first light/dark layout: a status chip in the top bar, a sticky bottom bar
+  with the preview coordinates, Save/Copy and Start/Apply/Stop, side-by-side coordinate fields,
+  and a setup checklist that only appears until the device is ready. Privacy details and usage
+  limitations are in **About & privacy** (ⓘ). Accessible labels, keyboard adjustments, and
+  system/keyboard insets are supported.
 - No accounts, API keys, ads, analytics, or cloud backups.
 - Offline mode hides map/search and their online-only controls and disclosures. Coordinate entry,
-  saved pins, World/Area/Fine adjustment sizes, copy, and Start/Apply/Stop remain available.
+  saved pins, Walk/Run/Drive nudges, copy, and Start/Apply/Stop remain available.
   Online features return automatically when Android validates the internet connection.
 - Sessions never automatically resume after reboot or process termination.
 
@@ -36,17 +39,17 @@ Requires **Android 8.0 or newer**. No root is needed.
 
 1. Enable **Developer options**: in Settings, find About phone / Software information
    and tap **Build number** seven times. OEM menus vary.
-2. Open **Developer options → Select mock location app → FlipPin**.
+2. Open **Developer options → Select mock location app → GPS Swap**.
 3. Enable the device's **Location** setting.
-4. Choose coordinates in FlipPin and tap **Start spoofing**. Allow the location permission
+4. Choose coordinates in GPS Swap and tap **Start spoofing**. Allow the location permission
    required by Android's location foreground-service rules. Approximate permission is sufficient;
-   FlipPin does not read your real location.
-5. Allow notifications to keep the Stop action visible. If denied, stop through FlipPin
+   GPS Swap does not read your real location.
+5. Allow notifications to keep the Stop action visible. If denied, stop through GPS Swap
    or Android's Active apps controls.
-6. To end a session, use **Stop spoofing** in the app or notification. The test providers
+6. To end a session, use **Stop** in the app or notification. The test providers
    are removed so Android can return to normal location fixes.
 
-Type a city, address, or landmark in **Find a destination**, tap **Search location**
+Type a city, address, or landmark in the search box, tap the magnifier at the end of the box
 (or the keyboard Search key), then choose a result to move the preview pin and zoom
 to the area. Search uses Android's device-provided `Geocoder`, not the public
 Nominatim API, and only runs when submitted, never while typing. English results
@@ -58,12 +61,14 @@ coordinates and map selection remain available. No extra API key is required.
 
 Pan/zoom the real-world map and tap a destination to select a six-decimal preview;
 long-press the pin to drag it. Typed and saved coordinates keep their precision.
-World, Area, and Fine use zoom levels 2, 13, and 18 around the selected point.
-Directional buttons
-adjust by 1°, 0.001°, or 0.00001° for World, Area, and Fine respectively. Longitude
-wraps at the date line; latitude stops at the poles. Typing, dragging, nudging, or
+Directional buttons move the pin at a practical human pace: **Walk** moves 5 m per tap,
+**Run** 10 m, and **Drive** 50 m, each about 4 seconds of travel at 5, 10, or 50 km/h.
+Distances are true metres north/south/east/west at the current latitude (WGS 84), so
+longitude steps grow away from the equator. Choosing a pace also zooms the map around the
+pin (levels 18, 17, and 15); search results zoom to level 13. Longitude
+wraps at the date line; latitude stops at the poles; east/west is undefined at a pole. Typing, dragging, nudging, or
 searching/selecting a result, or loading a saved pin only changes the preview, even during an active session:
-tap **Apply coordinates** explicitly to update the injected location.
+tap **Apply** explicitly to update the injected location.
 
 Maps require internet and use [OpenFreeMap](https://openfreemap.org/quick_start/)
 vector tiles through the device's Android WebView and locally bundled MapLibre GL JS,
@@ -77,7 +82,7 @@ transliterated names (`name:latin`); local-script-only labels are omitted rather
 than silently switching languages. Road numbers are retained. The map data does
 not contain an English translation for every street or business.
 The map provider receives your IP address and requested map areas;
-FlipPin does not read or upload your device's real location or saved-pin names.
+GPS Swap does not read or upload your device's real location or saved-pin names.
 Transparent 9sp attribution links to [OpenStreetMap's licence](https://www.openstreetmap.org/copyright),
 [OpenMapTiles](https://openmaptiles.org/), and [OpenFreeMap](https://openfreemap.org/).
 WebView manages its normal private HTTP cache; there is no bulk download,
@@ -192,4 +197,7 @@ access. The pipeline fails rather than shipping with a fallback key when the sec
 
 Local signing overrides: `FLIPPIN_KEYSTORE`, `FLIPPIN_KEYSTORE_PASSWORD`,
 `FLIPPIN_KEY_ALIAS`, and `FLIPPIN_KEY_PASSWORD`. CI expects the alias and passwords above.
-The application ID `in.bipul.flippin` must stay unchanged for upgrades.
+The application ID is `com.app0123456789.gps`; keep it unchanged for future upgrades.
+This installs separately from versions 1.0.3 and earlier (`in.bipul.flippin`), so their
+saved pins and permissions do not transfer. Select the new installation as the mock
+location app in Developer options before starting a session.

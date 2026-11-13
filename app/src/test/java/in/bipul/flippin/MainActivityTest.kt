@@ -48,6 +48,11 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.doReturn
 import java.util.Locale
 import org.json.JSONObject
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26, 35])
@@ -84,6 +89,14 @@ class MainActivityTest {
     }
 
     private fun CoordinateMapView.camera() = Bundle().also(::saveCamera)
+
+    private fun distanceMeters(from: Coordinates, to: Coordinates): Double {
+        val latitude = Math.toRadians(to.latitude - from.latitude)
+        val longitude = Math.toRadians(to.longitude - from.longitude)
+        val a = sin(latitude / 2).pow(2) + cos(Math.toRadians(from.latitude)) *
+            cos(Math.toRadians(to.latitude)) * sin(longitude / 2).pow(2)
+        return 2 * 6_371_008.8 * asin(sqrt(a))
+    }
 
     private fun CoordinateMapView.renderedState(): JSONObject {
         val script = shadowOf(requireNotNull(webView)).lastEvaluatedJavascript
@@ -142,9 +155,11 @@ class MainActivityTest {
             assertEquals(activity.getString(R.string.apply), activity.findViewById<Button>(R.id.start).text.toString())
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.stop).visibility)
             activity.findViewById<LinearLayout>(R.id.pins).getChildAt(0).performClick()
-            activity.findViewById<Button>(R.id.scale_fine).performClick()
+            activity.findViewById<Button>(R.id.pace_walk).performClick()
             activity.findViewById<Button>(R.id.nudge_north).performClick()
-            assertEquals("20.00001", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            val walked = activity.findViewById<EditText>(R.id.latitude).text.toString()
+            assertEquals(5.0, distanceMeters(Coordinates(20.0, 30.0), Coordinates(walked.toDouble(), 30.0)), 0.1)
+            assertEquals("30.0", activity.findViewById<EditText>(R.id.longitude).text.toString())
             assertEquals("12.5", service.getSharedPreferences(MockLocationService.STATE, Context.MODE_PRIVATE)
                 .getString(MockLocationService.LATITUDE, null))
             assertTrue(MockLocationService.isRunning)
@@ -152,13 +167,13 @@ class MainActivityTest {
             activity = controller.get()
             assertEquals(View.GONE, activity.findViewById<View>(R.id.online_map).visibility)
             assertNull(activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).webView)
-            assertEquals("20.00001", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            assertEquals(walked, activity.findViewById<EditText>(R.id.latitude).text.toString())
             setInternet(true)
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.online_search).visibility)
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.online_map).visibility)
             val restoredPad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
             restoredPad.event("ready")
-            assertEquals(20.00001, restoredPad.renderedState().getJSONObject("point").getDouble("latitude"), 0.0)
+            assertEquals(walked.toDouble(), restoredPad.renderedState().getJSONObject("point").getDouble("latitude"), 0.0)
             assertEquals(48.123456789, camera.getDouble("map_latitude"), 0.0)
             assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
         } finally {
@@ -182,7 +197,7 @@ class MainActivityTest {
             try {
                 val activity = controller.get()
                 val input = activity.findViewById<EditText>(R.id.location_query)
-                val search = activity.findViewById<Button>(R.id.search_location)
+                val search = activity.findViewById<View>(R.id.search_location)
                 input.setText("Paris")
                 search.performClick()
                 assertFalse(search.isEnabled)
@@ -298,7 +313,7 @@ class MainActivityTest {
             try {
                 val activity = controller.get()
                 val input = activity.findViewById<EditText>(R.id.location_query)
-                val button = activity.findViewById<Button>(R.id.search_location)
+                val button = activity.findViewById<View>(R.id.search_location)
                 val status = activity.findViewById<TextView>(R.id.search_status)
                 val results = activity.findViewById<LinearLayout>(R.id.search_results)
                 button.performClick()
@@ -346,7 +361,7 @@ class MainActivityTest {
         try {
             val activity = controller.get()
             activity.findViewById<EditText>(R.id.location_query).setText("Paris")
-            activity.findViewById<Button>(R.id.search_location).performClick()
+            activity.findViewById<View>(R.id.search_location).performClick()
             assertEquals(activity.getString(R.string.search_unavailable),
                 activity.findViewById<TextView>(R.id.search_status).text.toString())
             val map = activity.findViewById<View>(R.id.coordinate_pad)
@@ -429,22 +444,29 @@ class MainActivityTest {
         try {
             var activity = controller.get()
             activity.findViewById<EditText>(R.id.latitude).setText("12.5")
-            activity.findViewById<EditText>(R.id.longitude).setText("179.99999")
-            activity.findViewById<Button>(R.id.scale_fine).performClick()
+            activity.findViewById<EditText>(R.id.longitude).setText("179.9998")
+            activity.findViewById<Button>(R.id.pace_drive).performClick()
+            assertEquals(15.0, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).camera().getDouble("map_zoom"), 0.0)
             activity.findViewById<Button>(R.id.nudge_east).performClick()
             activity.findViewById<Button>(R.id.nudge_east).performClick()
             var point = Coordinates.parse(
                 activity.findViewById<EditText>(R.id.latitude).text.toString(),
                 activity.findViewById<EditText>(R.id.longitude).text.toString()
             )!!
-            assertEquals(-179.99999, point.longitude, 1e-9)
+            assertTrue(point.longitude < -179.99)
+            assertEquals(100.0, distanceMeters(Coordinates(12.5, 179.9998), point), 1.0)
             val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
             pad.onKeyDown(KeyEvent.KEYCODE_DPAD_UP, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP))
-            assertEquals(12.50001, activity.findViewById<EditText>(R.id.latitude).text.toString().toDouble(), 1e-9)
+            val north = Coordinates.parse(
+                activity.findViewById<EditText>(R.id.latitude).text.toString(),
+                activity.findViewById<EditText>(R.id.longitude).text.toString()
+            )!!
+            assertEquals(50.0, distanceMeters(point, north), 0.5)
+            assertEquals(point.longitude, north.longitude, 0.0)
             controller.recreate()
             activity = controller.get()
-            assertTrue(activity.findViewById<Button>(R.id.scale_fine).isSelected)
-            assertEquals(PinScale.FINE, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).scale)
+            assertTrue(activity.findViewById<Button>(R.id.pace_drive).isSelected)
+            assertEquals(Pace.DRIVE, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).pace)
             point = Coordinates.parse(
                 activity.findViewById<EditText>(R.id.latitude).text.toString(),
                 activity.findViewById<EditText>(R.id.longitude).text.toString()
@@ -479,7 +501,7 @@ class MainActivityTest {
         try {
             val activity = controller.get()
             assertTrue(MockLocationService.isRunning)
-            activity.findViewById<Button>(R.id.scale_fine).performClick()
+            activity.findViewById<Button>(R.id.pace_walk).performClick()
             val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
             pad.event("ready")
             val center = pad.camera()

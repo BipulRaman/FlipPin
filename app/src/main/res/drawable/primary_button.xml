@@ -3,7 +3,7 @@
     <item>
         <shape>
             <solid android:color="@color/accent" />
-            <corners android:radius="16dp" />
+            <corners android:radius="6dp" />
         </shape>
     </item>
 </ripple>

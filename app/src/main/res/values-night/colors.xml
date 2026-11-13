@@ -8,5 +8,7 @@
     <color name="accent_soft">#21433F</color>
     <color name="border">#2C434D</color>
     <color name="success">#7ADBA5</color>
+    <color name="success_soft">#1D3F31</color>
+    <color name="hint">#7F98A2</color>
     <color name="error">#FFB4AB</color>
 </resources>
