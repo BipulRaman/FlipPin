@@ -217,7 +217,7 @@ class MockLocationService : Service() {
         const val BEARING = "bearing"
         /** Longest projection without a joystick update; updates arrive every half second while moving. */
         const val MOVE_TIMEOUT_MS = 2_000L
-        private const val MAX_SPEED = JoystickSpeed.MAX_KILOMETERS_PER_HOUR / 3.6
+        private const val MAX_SPEED = 100.0 / 3.6
         private const val TAG = "MockLocationService"
         private const val ACTION_STOP = "in.bipul.flippin.STOP"
         private const val CHANNEL = "mock_location"

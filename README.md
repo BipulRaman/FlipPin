@@ -64,8 +64,10 @@ coordinates and map selection remain available. No extra API key is required.
 
 Pan/zoom the real-world map and tap a destination to select a six-decimal preview;
 long-press the pin to drag it. Typed and saved coordinates keep their precision.
-Drag the joystick knob in any direction (360°; north is up, like the map) to move: a light push
-walks, and pushing further speeds up smoothly to 100 km/h at the edge. The readout shows the
+Select a fixed speed from the dropdown to the left of the joystick: Walk (5 km/h), Run
+(10 km/h), Cycle (20 km/h), or Drive (50 km/h). The selection is remembered. Drag the joystick
+knob in any direction (360°; north is up, like the map) to steer; pushing further does not
+change speed. Changing the dropdown while moving takes effect immediately. The readout shows the
 speed, compass heading, and pace (walking, running, cycling, or driving); releasing stops.
 Distances are true metres along the heading at the current latitude (WGS 84). The map
 follows the pin, and starting to move zooms a far-out map to street level (16); search

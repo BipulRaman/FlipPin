@@ -57,7 +57,12 @@
     <string name="online_privacy_link">Details</string>
     <string name="map_limit">Map ends near ±85°; your exact coordinates still apply.</string>
     <string name="browser_unavailable">No browser is available. Map licence: https://www.openstreetmap.org/copyright</string>
-    <string name="joystick_description">Movement joystick. Drag in any direction; push further to go faster.</string>
+    <string name="joystick_description">Direction joystick. Drag to move at the selected speed; release to stop.</string>
+    <string name="speed_type">Speed</string>
+    <string name="speed_walk">Walk · 5 km/h</string>
+    <string name="speed_run">Run · 10 km/h</string>
+    <string name="speed_cycle">Cycle · 20 km/h</string>
+    <string name="speed_drive">Drive · 50 km/h</string>
     <string name="move_north">Move north %1$d m</string>
     <string name="move_east">Move east %1$d m</string>
     <string name="move_south">Move south %1$d m</string>
@@ -65,8 +70,8 @@
     <string name="move_stopped">Stopped</string>
     <string name="move_speed">%1$s km/h</string>
     <string name="move_heading">%1$s %2$d° · %3$s</string>
-    <string name="move_hint_preview">Drag the knob any direction to move the preview pin; push further to go faster.</string>
-    <string name="move_hint_live">Drag the knob to move your live location; push further to go faster.</string>
+    <string name="move_hint_preview">Drag to steer the preview pin at the selected speed.</string>
+    <string name="move_hint_live">Drag to steer your live location at the selected speed.</string>
     <string name="pace_walking">walking pace</string>
     <string name="pace_running">running pace</string>
     <string name="pace_cycling">cycling pace</string>

@@ -3,23 +3,16 @@ package `in`.bipul.flippin
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.cos
-import kotlin.math.pow
 import kotlin.math.sin
 
 /** Distance of one keyboard or accessibility movement step: a few walking paces. */
 const val STEP_METERS = 5.0
 
-/** Joystick ground speed: none inside a small dead zone, then an ease-in curve up to the maximum at the edge. */
-object JoystickSpeed {
-    const val DEAD_ZONE = 0.12
-    const val MAX_KILOMETERS_PER_HOUR = 100.0
-
-    fun kilometersPerHour(deflection: Double): Double {
-        if (!(deflection > DEAD_ZONE)) return 0.0
-        val travel = ((deflection - DEAD_ZONE) / (1 - DEAD_ZONE)).coerceAtMost(1.0)
-        // The curve keeps a usable walking and running range near the centre.
-        return MAX_KILOMETERS_PER_HOUR * travel.pow(2.5)
-    }
+enum class MovementSpeed(val label: Int, val kilometersPerHour: Double) {
+    WALK(R.string.speed_walk, 5.0),
+    RUN(R.string.speed_run, 10.0),
+    CYCLE(R.string.speed_cycle, 20.0),
+    DRIVE(R.string.speed_drive, 50.0)
 }
 
 fun Coordinates.moved(northMeters: Double, eastMeters: Double): Coordinates {

@@ -20,13 +20,13 @@ import kotlin.math.roundToInt
 
 /**
  * A 360° joystick. While dragged it reports the bearing (degrees clockwise from north, which is up)
- * and how far the knob is pushed (0 to 1); releasing reports a deflection of 0.
+ * and whether it is outside the centre dead zone; releasing stops movement.
  */
 class JoystickView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
-    var onMove: ((bearing: Double, deflection: Double) -> Unit)? = null
+    var onMove: ((bearing: Double, moving: Boolean) -> Unit)? = null
     /** A single keyboard or accessibility step in one compass direction. */
     var onStep: ((bearing: Double) -> Unit)? = null
 
@@ -130,7 +130,7 @@ class JoystickView @JvmOverloads constructor(
         knobY = dy * scale
         if (distance > 0f) bearing = (Math.toDegrees(atan2(dx.toDouble(), -dy.toDouble())) + 360.0) % 360.0
         invalidate()
-        onMove?.invoke(bearing, (distance / travel).coerceAtMost(1f).toDouble())
+        onMove?.invoke(bearing, distance / travel > DEAD_ZONE)
     }
 
     /** Reports that movement stopped and springs the knob back to the centre. */
@@ -139,7 +139,7 @@ class JoystickView @JvmOverloads constructor(
         dragging = false
         isPressed = false
         parent?.requestDisallowInterceptTouchEvent(false)
-        onMove?.invoke(bearing, 0.0)
+        onMove?.invoke(bearing, false)
         val fromX = knobX
         val fromY = knobY
         returning = ValueAnimator.ofFloat(1f, 0f).apply {
@@ -192,6 +192,7 @@ class JoystickView @JvmOverloads constructor(
     private companion object {
         const val DEFAULT_SIZE_DP = 128
         const val RETURN_MS = 120L
+        const val DEAD_ZONE = 0.12f
         val STEPS = listOf(
             Step(R.id.move_north, R.string.move_north, KeyEvent.KEYCODE_DPAD_UP, 0.0),
             Step(R.id.move_east, R.string.move_east, KeyEvent.KEYCODE_DPAD_RIGHT, 90.0),

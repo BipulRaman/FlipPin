@@ -162,6 +162,13 @@
                     android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                         android:layout_weight="1" android:orientation="vertical">
+                        <TextView style="@style/FieldLabel" android:labelFor="@id/movement_speed"
+                            android:text="@string/speed_type" />
+                        <Spinner android:id="@+id/movement_speed"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:minHeight="48dp" android:spinnerMode="dropdown"
+                            android:popupBackground="@color/surface"
+                            android:backgroundTint="@color/accent" />
                         <TextView android:id="@+id/move_speed" style="@style/Body" android:textColor="@color/text"
                             android:fontFamily="sans-serif-medium" android:textSize="18sp"
                             android:lineSpacingExtra="0dp" android:text="@string/move_stopped" />

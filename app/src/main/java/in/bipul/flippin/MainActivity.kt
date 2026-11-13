@@ -42,6 +42,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.EditorInfo
 import android.widget.ArrayAdapter
+import android.widget.AdapterView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -49,6 +50,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListPopupWindow
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import java.util.Locale
@@ -95,6 +97,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private var setupReady: Boolean? = null
     private var permissionBlocked = false
     private lateinit var joystick: JoystickView
+    private var movementSpeed = MovementSpeed.WALK
     private var moveBearing = 0.0
     private var moveSpeed = 0.0
     // Exact position while the joystick is held; the fields show it rounded.
@@ -261,6 +264,30 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         joystick = findViewById(R.id.joystick)
         joystick.onMove = ::onJoystick
         joystick.onStep = ::stepJoystick
+        movementSpeed = MovementSpeed.entries.firstOrNull {
+            it.name == state.getString("movement_speed", null)
+        } ?: MovementSpeed.WALK
+        findViewById<Spinner>(R.id.movement_speed).apply {
+            adapter = ArrayAdapter(this@MainActivity, R.layout.item_speed,
+                MovementSpeed.entries.map { getString(it.label) })
+            setSelection(movementSpeed.ordinal)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    val selected = MovementSpeed.entries[position]
+                    if (selected == movementSpeed) return
+                    advanceMovement()
+                    movementSpeed = selected
+                    if (moveSpeed > 0.0) {
+                        moveSpeed = selected.kilometersPerHour / 3.6
+                        if (sessionRunning()) movePosition?.let { sendMovement(it, moveSpeed) }
+                    }
+                    renderMovement()
+                    state.edit().putString("movement_speed", selected.name).apply()
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            }
+        }
         findViewById<ImageButton>(R.id.copy_coordinates).setOnClickListener {
             readCoordinates()?.let { point ->
                 getSystemService(ClipboardManager::class.java).setPrimaryClip(
@@ -726,14 +753,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
     }
 
-    private fun onJoystick(bearing: Double, deflection: Double) {
-        val kilometersPerHour = JoystickSpeed.kilometersPerHour(deflection)
-        if (kilometersPerHour == 0.0) {
+    private fun onJoystick(bearing: Double, moving: Boolean) {
+        if (!moving) {
             stopMovement()
             // Releasing lets the next drag retry after an invalid starting point.
-            if (deflection == 0.0) moveBlocked = false
+            moveBlocked = false
             return
         }
+        advanceMovement()
         moveBearing = bearing
         val starting = moveSpeed == 0.0
         if (starting) {
@@ -747,7 +774,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             joystick.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             joystick.postDelayed(moveTick, MOVE_TICK_MS)
         }
-        moveSpeed = kilometersPerHour / 3.6
+        moveSpeed = movementSpeed.kilometersPerHour / 3.6
         if (starting && sessionRunning()) movePosition?.let { sendMovement(it, moveSpeed) }
         renderMovement()
     }

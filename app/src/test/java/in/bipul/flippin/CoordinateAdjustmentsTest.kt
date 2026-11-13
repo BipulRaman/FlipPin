@@ -60,17 +60,4 @@ class CoordinateAdjustmentsTest {
         assertEquals(90.0, Coordinates(89.99999, 0.0).travelled(0.0, 10.0).latitude, 0.0)
     }
 
-    @Test
-    fun joystickSpeedIgnoresTheDeadZoneAndEasesFromAWalkToTheMaximum() {
-        assertEquals(0.0, JoystickSpeed.kilometersPerHour(0.0), 0.0)
-        assertEquals(0.0, JoystickSpeed.kilometersPerHour(JoystickSpeed.DEAD_ZONE), 0.0)
-        assertEquals(0.0, JoystickSpeed.kilometersPerHour(Double.NaN), 0.0)
-        assertTrue(JoystickSpeed.kilometersPerHour(0.37) in 3.0..7.0)
-        assertTrue(JoystickSpeed.kilometersPerHour(0.5) in 8.0..16.0)
-        assertTrue(JoystickSpeed.kilometersPerHour(0.75) in 30.0..60.0)
-        assertEquals(100.0, JoystickSpeed.kilometersPerHour(1.0), 1e-9)
-        assertEquals(100.0, JoystickSpeed.kilometersPerHour(2.0), 1e-9)
-        val sweep = (13..100).map { JoystickSpeed.kilometersPerHour(it / 100.0) }
-        assertTrue(sweep.zipWithNext().all { (slower, faster) -> faster > slower })
-    }
 }
