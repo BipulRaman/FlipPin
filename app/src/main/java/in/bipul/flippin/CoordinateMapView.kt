@@ -1,148 +1,193 @@
 package `in`.bipul.flippin
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.PointF
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.AttributeSet
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.FrameLayout
-import org.osmdroid.config.Configuration
-import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.tileprovider.MapTileProviderBase
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.MapEventsOverlay
-import org.osmdroid.views.overlay.Marker
-import java.io.File
+import org.maplibre.android.MapLibre
+import org.maplibre.android.annotations.IconFactory
+import org.maplibre.android.annotations.Marker
+import org.maplibre.android.annotations.MarkerOptions
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
+import kotlin.math.hypot
 import kotlin.math.round
 
+@Suppress("DEPRECATION")
 class CoordinateMapView @JvmOverloads constructor(
     context: Context, attributes: AttributeSet? = null
 ) : FrameLayout(context, attributes) {
-    val map: MapView
-    private val marker: Marker
+    val mapView: MapView
+    var map: MapLibreMap? = null
+        private set
+    private var marker: Marker? = null
     private var point: Coordinates? = null
+    private var camera = CameraPosition.Builder().target(LatLng(0.0, 0.0)).zoom(2.0).build()
+    private var dragging = false
+    private var destroyed = false
     var onCoordinateChanged: ((Coordinates) -> Unit)? = null
     var onTileFailureChanged: ((Boolean) -> Unit)? = null
     var scale = PinScale.WORLD
         private set
-    private val tileHandler = Handler(Looper.getMainLooper()) { message ->
-        when (message.what) {
-            MapTileProviderBase.MAPTILE_FAIL_ID -> {
-                Log.w("FlipPinMap", "A map tile could not be loaded")
-                onTileFailureChanged?.invoke(true)
-            }
-        }
-        false
-    }
 
     init {
-        Configuration.getInstance().apply {
-            userAgentValue = "FlipPin/${BuildConfig.VERSION_NAME} (+https://github.com/BipulRaman/FlipPin)"
-            osmdroidBasePath = File(context.filesDir, "map")
-            osmdroidTileCache = File(context.cacheDir, "map-tiles")
-            // osmdroid reads server cache headers; retain tiles for at least seven days as well.
-            expirationExtendedDuration = 7L * 24 * 60 * 60 * 1000
-            tileFileSystemCacheMaxBytes = 100L * 1024 * 1024
-            tileFileSystemCacheTrimBytes = 80L * 1024 * 1024
+        MapLibre.getInstance(context.applicationContext)
+        mapView = MapView(context, MapLibreMapOptions.createFromAttributes(context)
+            .textureMode(true).attributionEnabled(false).logoEnabled(false)
+            .rotateGesturesEnabled(false).tiltGesturesEnabled(false))
+        addView(mapView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        mapView.onCreate(null)
+        mapView.addOnDidFailLoadingMapListener { message ->
+            Log.w("FlipPinMap", "Map loading failed: $message")
+            onTileFailureChanged?.invoke(true)
         }
-        map = MapView(context).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
-            setMultiTouchControls(true)
-            minZoomLevel = 2.0
-            maxZoomLevel = 19.0
-            controller.setZoom(2.0)
-            controller.setCenter(GeoPoint(0.0, 0.0))
-            tileProvider.tileRequestCompleteHandlers.add(tileHandler)
-        }
-        addView(map, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
-            override fun singleTapConfirmedHelper(position: GeoPoint): Boolean {
-                choose(position)
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                return true
-            }
-
-            override fun longPressHelper(position: GeoPoint): Boolean = false
-        }))
-        marker = Marker(map).apply {
-            icon = context.getDrawable(R.drawable.map_pin)
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-            isDraggable = true
-            isEnabled = false
-            setInfoWindow(null)
-            setOnMarkerClickListener { _, _ -> true }
-            setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                override fun onMarkerDragStart(marker: Marker) = Unit
-                override fun onMarkerDrag(marker: Marker) = choose(marker.position)
-                override fun onMarkerDragEnd(marker: Marker) {
-                    choose(marker.position)
+        mapView.getMapAsync { ready ->
+            if (!destroyed) {
+                map = ready
+                ready.setMinZoomPreference(2.0)
+                ready.setMaxZoomPreference(19.0)
+                ready.cameraPosition = camera
+                ready.addOnCameraIdleListener { camera = ready.cameraPosition }
+                ready.addOnMapClickListener {
+                    choose(it)
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    true
                 }
-            })
+                ready.addOnMapLongClickListener { position ->
+                    val selected = point
+                    if (selected == null || marker == null) false
+                    else {
+                        val pin = ready.projection.toScreenLocation(LatLng(selected.latitude, selected.longitude))
+                        val touch = ready.projection.toScreenLocation(position)
+                        dragging = hypot(pin.x - touch.x, pin.y - touch.y) <= 40 * resources.displayMetrics.density
+                        if (dragging) {
+                            ready.uiSettings.isScrollGesturesEnabled = false
+                            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        }
+                        dragging
+                    }
+                }
+                loadStyle()
+            }
         }
-        map.overlays.add(marker)
         isFocusable = true
         updateDescription()
     }
 
+    private fun loadStyle() {
+        map?.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
+            // Replace name labels, not route shields, with English/Latin-only fields.
+            style.layers.filterIsInstance<SymbolLayer>().forEach { layer ->
+                val field = layer.textField
+                val text = field.expression?.toString() ?: field.value?.toString().orEmpty()
+                if (text.contains("name")) {
+                    layer.setProperties(PropertyFactory.textField(Expression.switchCase(
+                        Expression.neq(Expression.coalesce(Expression.get("name:en"), Expression.literal("")), Expression.literal("")),
+                        Expression.get("name:en"),
+                        Expression.neq(Expression.coalesce(Expression.get("name_en"), Expression.literal("")), Expression.literal("")),
+                        Expression.get("name_en"),
+                        Expression.coalesce(Expression.get("name:latin"), Expression.literal(""))
+                    )))
+                }
+            }
+            updateMarker()
+            onTileFailureChanged?.invoke(false)
+        }
+    }
+
     fun setCoordinates(coordinates: Coordinates?, recenter: Boolean = true) {
         point = coordinates
-        marker.isEnabled = coordinates != null && coordinates.latitude in -MAP_LATITUDE_LIMIT..MAP_LATITUDE_LIMIT
-        coordinates?.let {
-            marker.position = GeoPoint(it.latitude, it.longitude)
-            if (recenter) map.controller.setCenter(cameraPoint(it))
+        if (recenter && coordinates != null) {
+            camera = CameraPosition.Builder(currentCamera()).target(cameraPoint(coordinates)).build()
+            map?.moveCamera(CameraUpdateFactory.newCameraPosition(camera))
         }
+        updateMarker()
         updateDescription()
-        map.invalidate()
     }
 
     fun setScale(newScale: PinScale) {
         scale = newScale
-        map.controller.setZoom(when (scale) {
+        camera = CameraPosition.Builder(currentCamera()).zoom(when (scale) {
             PinScale.WORLD -> 2.0
             PinScale.AREA -> 13.0
             PinScale.FINE -> 18.0
-        })
-        point?.let { map.controller.setCenter(cameraPoint(it)) }
+        }).apply { point?.let { target(cameraPoint(it)) } }.build()
+        map?.moveCamera(CameraUpdateFactory.newCameraPosition(camera))
     }
 
-    fun resumeMap() = map.onResume()
+    fun resumeMap() {
+        mapView.onStart()
+        mapView.onResume()
+    }
 
-    fun pauseMap() = map.onPause()
+    fun pauseMap() {
+        endDrag()
+        mapView.onPause()
+        mapView.onStop()
+    }
 
     fun destroyMap() {
-        map.tileProvider.tileRequestCompleteHandlers.remove(tileHandler)
-        tileHandler.removeCallbacksAndMessages(null)
-        map.onDetach()
+        destroyed = true
+        mapView.onDestroy()
     }
+
+    fun lowMemory() = mapView.onLowMemory()
 
     fun retryTiles() {
         onTileFailureChanged?.invoke(false)
-        map.invalidate()
+        loadStyle()
     }
 
     fun saveCamera(state: Bundle) {
-        state.putDouble("map_latitude", map.mapCenter.latitude)
-        state.putDouble("map_longitude", map.mapCenter.longitude)
-        state.putDouble("map_zoom", map.zoomLevelDouble)
+        val saved = currentCamera()
+        saved.target?.let {
+            state.putDouble("map_latitude", it.latitude)
+            state.putDouble("map_longitude", it.longitude)
+        }
+        state.putDouble("map_zoom", saved.zoom)
     }
 
     fun restoreCamera(state: Bundle) {
         if (!state.containsKey("map_zoom")) return
-        map.controller.setZoom(state.getDouble("map_zoom"))
-        map.controller.setCenter(GeoPoint(state.getDouble("map_latitude"), state.getDouble("map_longitude")))
+        camera = CameraPosition.Builder().target(LatLng(
+            state.getDouble("map_latitude"), state.getDouble("map_longitude")
+        )).zoom(state.getDouble("map_zoom")).build()
+        map?.moveCamera(CameraUpdateFactory.newCameraPosition(camera))
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> parent?.requestDisallowInterceptTouchEvent(true)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) parent?.requestDisallowInterceptTouchEvent(true)
+        if (dragging) {
+            if (event.actionMasked == MotionEvent.ACTION_MOVE || event.actionMasked == MotionEvent.ACTION_UP) {
+                map?.projection?.fromScreenLocation(PointF(event.x, event.y))?.let(::choose)
+            }
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                endDrag()
+                val cancel = MotionEvent.obtain(event)
+                cancel.action = MotionEvent.ACTION_CANCEL
+                mapView.dispatchTouchEvent(cancel)
+                cancel.recycle()
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            return true
+        }
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            parent?.requestDisallowInterceptTouchEvent(false)
         }
         return super.dispatchTouchEvent(event)
     }
@@ -161,7 +206,38 @@ class CoordinateMapView @JvmOverloads constructor(
         return true
     }
 
-    private fun choose(position: GeoPoint) {
+    private fun currentCamera() = map?.cameraPosition ?: camera
+
+    private fun endDrag() {
+        if (dragging) map?.uiSettings?.isScrollGesturesEnabled = true
+        dragging = false
+    }
+
+    private fun updateMarker() {
+        val ready = map ?: return
+        val selected = point
+        if (selected == null || selected.latitude !in -MAP_LATITUDE_LIMIT..MAP_LATITUDE_LIMIT) {
+            marker?.let { ready.removeMarker(it) }
+            marker = null
+            return
+        }
+        val position = LatLng(selected.latitude, selected.longitude)
+        val current = marker
+        if (current != null) {
+            current.position = position
+            ready.updateMarker(current)
+        } else if (ready.style != null) {
+            val drawable = context.getDrawable(R.drawable.map_pin)!!
+            val bitmap = Bitmap.createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888)
+            drawable.setBounds(0, 0, bitmap.width, bitmap.height)
+            drawable.draw(Canvas(bitmap))
+            marker = ready.addMarker(MarkerOptions().position(position)
+                .icon(IconFactory.getInstance(context).fromBitmap(bitmap)))
+            ready.setOnMarkerClickListener { true }
+        }
+    }
+
+    private fun choose(position: LatLng) {
         val longitude = ((position.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         val selected = Coordinates(
             round(position.latitude.coerceIn(-MAP_LATITUDE_LIMIT, MAP_LATITUDE_LIMIT) * 1e6) / 1e6,
@@ -171,7 +247,7 @@ class CoordinateMapView @JvmOverloads constructor(
         onCoordinateChanged?.invoke(selected)
     }
 
-    private fun cameraPoint(coordinates: Coordinates) = GeoPoint(
+    private fun cameraPoint(coordinates: Coordinates) = LatLng(
         coordinates.latitude.coerceIn(-MAP_LATITUDE_LIMIT, MAP_LATITUDE_LIMIT), coordinates.longitude
     )
 
@@ -183,5 +259,6 @@ class CoordinateMapView @JvmOverloads constructor(
 
     companion object {
         const val MAP_LATITUDE_LIMIT = 85.0511287798066
+        const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
     }
 }

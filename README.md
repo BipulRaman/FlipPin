@@ -1,7 +1,7 @@
 # FlipPin
 
 A small native Android app for **authorized GPS mock-location testing**.
-Choose a point on the interactive OpenStreetMap or enter latitude and longitude,
+Search for a destination, choose a point on the interactive map, or enter latitude and longitude,
 save frequently used pins, and simulate a fixed location
 with a visible foreground session and a Stop action.
 
@@ -11,9 +11,11 @@ root the device, bypass app protections, or change IP/cellular location.
 ## Features
 
 - Decimal-degree latitude/longitude validation, including negative values and decimal commas.
-- Real-world OpenStreetMap with street/place labels, pan, pinch/double-tap zoom,
+- Real-world OpenStreetMap data rendered with English-first street/place labels, pan, pinch/double-tap zoom,
   tap-to-place and long-press-to-drag pins, World/Area/Fine zoom presets,
   directional adjustments, a live coordinate preview, and copy-to-clipboard.
+- Search cities, addresses, and landmarks; choose from up to five results to preview
+  a destination. Tiny, linked map attribution overlays the map without a box.
 - GPS and network test providers refreshed every second with 10 m reported accuracy.
 - Apply different coordinates while a session is running.
 - Named saved-pin cards stored privately on the device; tap to load, use the menu
@@ -41,21 +43,37 @@ Requires **Android 8.0 or newer**. No root is needed.
 6. To end a session, use **Stop spoofing** in the app or notification. The test providers
    are removed so Android can return to normal location fixes.
 
+Type a city, address, or landmark in **Find a destination**, tap **Search location**
+(or the keyboard Search key), then choose a result to move the preview pin and zoom
+to the area. Search uses Android's device-provided `Geocoder`, not the public
+Nominatim API, and only runs when submitted, never while typing. English results
+are requested regardless of the phone's language (the provider controls available translations). The device's
+geocoding provider receives the entered search text; avoid sensitive information.
+Availability, connectivity requirements, and search coverage depend on the device/provider.
+Missing service, connection failures, and empty results are shown explicitly; manual
+coordinates and map selection remain available. No extra API key is required.
+
 Pan/zoom the real-world map and tap a destination to select a six-decimal preview;
 long-press the pin to drag it. Typed and saved coordinates keep their precision.
 World, Area, and Fine use zoom levels 2, 13, and 18 around the selected point.
 Directional buttons
 adjust by 1°, 0.001°, or 0.00001° for World, Area, and Fine respectively. Longitude
 wraps at the date line; latitude stops at the poles. Typing, dragging, nudging, or
-loading a saved pin only changes the preview, even during an active session:
+searching/selecting a result, or loading a saved pin only changes the preview, even during an active session:
 tap **Apply coordinates** explicitly to update the injected location.
 
-Maps require internet and use `https://tile.openstreetmap.org` through osmdroid.
-The provider receives your IP address, application User-Agent, and requested tile areas;
+Maps require internet and use [OpenFreeMap](https://openfreemap.org/quick_start/)
+vector tiles through MapLibre Native, without an API key or billing account.
+Place-name labels prefer English (`name:en` / `name_en`), then Latin-script or
+transliterated names (`name:latin`); local-script-only labels are omitted rather
+than silently switching languages. Road numbers are retained. The map data does
+not contain an English translation for every street or business.
+The map provider receives your IP address and requested map areas;
 FlipPin does not read or upload your device's real location or saved-pin names.
-Attribution links to [OpenStreetMap's licence](https://www.openstreetmap.org/copyright).
-Tiles are cached privately with server expiry headers plus seven days; there is no
-bulk download, prefetch, or offline-map download feature. Tile availability is
+Transparent 9sp attribution links to [OpenStreetMap's licence](https://www.openstreetmap.org/copyright),
+[OpenMapTiles](https://openmaptiles.org/), and [OpenFreeMap](https://openfreemap.org/).
+MapLibre manages the private on-device map cache; there is no bulk download,
+prefetch, or offline-map download feature. Tile availability is
 best-effort, and load failures show a retry action. Coordinate entry, saved pins,
 and spoofing work without internet. Web Mercator maps cover approximately
 85.0511°S to 85.0511°N; coordinates outside this coverage remain editable/applicable
@@ -87,7 +105,7 @@ FlipPin/
     src/test/java/in/bipul/flippin/
 ```
 
-Stack: **Kotlin + Android Views + osmdroid 6.1.20** (Apache-2.0), minSdk 26 /
+Stack: **Kotlin + Android Views + MapLibre Native 13.0.2** (BSD-2-Clause), minSdk 26 /
 compileSdk and targetSdk 37, Android Gradle Plugin 9.4.1, Gradle 9.8.2, JDK 17+
 (Java 21 in CI). JVM tests use JUnit and Robolectric.
 

@@ -59,6 +59,21 @@
         <LinearLayout android:id="@+id/pad_card" style="@style/Card">
             <TextView style="@style/SectionTitle" android:text="@string/place_pin" />
             <TextView style="@style/Body" android:layout_marginTop="6dp" android:text="@string/pad_hint" />
+            <TextView style="@style/Body" android:layout_marginTop="16dp"
+                android:labelFor="@id/location_query" android:text="@string/search_label" />
+            <EditText android:id="@+id/location_query" style="@style/CoordinateField"
+                android:fontFamily="sans-serif" android:inputType="textCapWords"
+                android:imeOptions="actionSearch" android:hint="@string/search_hint"
+                android:saveEnabled="true" android:maxLength="200" />
+            <Button android:id="@+id/search_location" style="@style/ActionButton"
+                android:layout_marginTop="8dp" android:text="@string/search_location" />
+            <TextView style="@style/Body" android:layout_marginTop="6dp"
+                android:text="@string/search_privacy" android:textSize="12sp" />
+            <TextView android:id="@+id/search_status" style="@style/Body"
+                android:layout_marginTop="8dp" android:visibility="gone"
+                android:accessibilityLiveRegion="polite" />
+            <LinearLayout android:id="@+id/search_results" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="16dp" android:orientation="horizontal">
                 <Button android:id="@+id/scale_world" style="@style/SegmentButton" android:text="@string/scale_world" />
@@ -71,10 +86,12 @@
                 android:layout_marginTop="12dp">
                 <in.bipul.flippin.CoordinateMapView android:id="@+id/coordinate_pad"
                     android:layout_width="match_parent" android:layout_height="match_parent" />
-                <Button android:id="@+id/map_attribution" style="@style/ActionButton"
+                <TextView android:id="@+id/map_attribution"
                     android:layout_width="wrap_content" android:layout_height="48dp"
-                    android:layout_gravity="bottom|end" android:background="@color/surface"
-                    android:textSize="11sp" android:text="@string/map_attribution" />
+                    android:layout_gravity="bottom|end" android:gravity="bottom|end"
+                    android:padding="4dp" android:focusable="true" android:clickable="true"
+                    android:textColor="#173B43" android:textColorLink="#173B43" android:shadowColor="#FFFFFF"
+                    android:shadowRadius="2" android:textSize="9sp" android:text="@string/map_attribution" />
             </FrameLayout>
             <TextView style="@style/Body" android:text="@string/map_privacy" android:textSize="12sp" />
             <Button android:id="@+id/map_retry" style="@style/ActionButton"

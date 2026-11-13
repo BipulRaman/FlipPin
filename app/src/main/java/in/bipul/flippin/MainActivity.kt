@@ -15,6 +15,7 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.location.Geocoder
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -23,12 +24,17 @@ import android.os.Process
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
 import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowInsets
 import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -45,6 +51,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private lateinit var latitude: EditText
     private lateinit var longitude: EditText
     private lateinit var pad: CoordinateMapView
+    private lateinit var locationSearch: LocationSearch
+    private var searching = false
     private var pending: Coordinates? = null
     private var updatingFields = false
     private var selectedPinId: String? = null
@@ -72,17 +80,32 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         latitude = findViewById(R.id.latitude)
         longitude = findViewById(R.id.longitude)
         pad = findViewById(R.id.coordinate_pad)
+        locationSearch = LocationSearch(Geocoder(this, Locale.ENGLISH))
+        findViewById<Button>(R.id.search_location).setOnClickListener { searchLocation() }
+        findViewById<EditText>(R.id.location_query).setOnEditorActionListener { _, action, _ ->
+            if (action == EditorInfo.IME_ACTION_SEARCH) {
+                searchLocation()
+                true
+            } else false
+        }
         pad.onTileFailureChanged = { failed ->
             findViewById<View>(R.id.map_retry).visibility = if (failed) View.VISIBLE else View.GONE
         }
         findViewById<Button>(R.id.map_retry).setOnClickListener { pad.retryTiles() }
-        findViewById<Button>(R.id.map_attribution).setOnClickListener {
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.openstreetmap.org/copyright")))
-            } catch (error: ActivityNotFoundException) {
-                Log.w(TAG, "Cannot open map attribution", error)
-                Toast.makeText(this, R.string.browser_unavailable, Toast.LENGTH_LONG).show()
+        findViewById<TextView>(R.id.map_attribution).apply {
+            text = SpannableString(getString(R.string.map_attribution)).apply {
+                for ((name, url) in listOf(
+                    "OpenStreetMap" to "https://www.openstreetmap.org/copyright",
+                    "OpenMapTiles" to "https://openmaptiles.org/",
+                    "OpenFreeMap" to "https://openfreemap.org/"
+                )) {
+                    val start = indexOf(name)
+                    setSpan(object : ClickableSpan() {
+                        override fun onClick(widget: View) = openMapAttribution(url)
+                    }, start, start + name.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
             }
+            movementMethod = LinkMovementMethod.getInstance()
         }
         latitude.setText(state.getString(MockLocationService.LATITUDE, ""))
         longitude.setText(state.getString(MockLocationService.LONGITUDE, ""))
@@ -160,8 +183,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onDestroy() {
+        locationSearch.close()
         pad.destroyMap()
         super.onDestroy()
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        pad.lowMemory()
     }
 
     override fun onStop() {
@@ -189,6 +218,79 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onSharedPreferenceChanged(preferences: SharedPreferences, key: String?) = renderState()
+
+    private fun searchLocation() {
+        if (searching) return
+        val input = findViewById<EditText>(R.id.location_query)
+        val query = input.text.toString().trim()
+        input.error = null
+        if (query.isBlank()) {
+            input.error = getString(R.string.search_required)
+            input.requestFocus()
+            return
+        }
+        findViewById<LinearLayout>(R.id.search_results).removeAllViews()
+        if (!Geocoder.isPresent()) {
+            showSearchStatus(getString(R.string.search_unavailable), failed = true)
+            return
+        }
+        searching = true
+        input.isEnabled = false
+        findViewById<Button>(R.id.search_location).isEnabled = false
+        showSearchStatus(getString(R.string.search_loading))
+        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
+        locationSearch.search(query) { result ->
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing) {
+                    searching = false
+                    input.isEnabled = true
+                    findViewById<Button>(R.id.search_location).isEnabled = true
+                    result.fold(
+                        onSuccess = { places -> renderSearchResults(places) },
+                        onFailure = { error ->
+                            Log.w(TAG, "Location search failed", error)
+                            showSearchStatus(getString(R.string.search_failed), failed = true)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showSearchStatus(message: String, failed: Boolean = false) {
+        findViewById<TextView>(R.id.search_status).apply {
+            text = message
+            visibility = View.VISIBLE
+            setTextColor(getColor(if (failed) R.color.error else R.color.muted))
+        }
+    }
+
+    private fun renderSearchResults(places: List<PlaceResult>) {
+        showSearchStatus(getString(if (places.isEmpty()) R.string.search_empty else R.string.search_choose))
+        val results = findViewById<LinearLayout>(R.id.search_results)
+        places.forEach { place ->
+            results.addView(TextView(this).apply {
+                text = place.name
+                textSize = 14f
+                setTextColor(getColor(R.color.text))
+                setBackgroundResource(R.drawable.pin_card)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                minimumHeight = dp(48)
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(6) }
+                setOnClickListener {
+                    setCoordinateInputs(place.coordinates)
+                    selectScale(PinScale.AREA)
+                    results.removeAllViews()
+                    showSearchStatus(getString(R.string.search_selected, place.name))
+                    this@MainActivity.findViewById<EditText>(R.id.location_query).clearFocus()
+                    pad.requestRectangleOnScreen(Rect(0, 0, pad.width, pad.height), false)
+                }
+            })
+        }
+    }
 
     private fun readCoordinates(): Coordinates? {
         latitude.error = null
@@ -403,6 +505,15 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         } catch (error: ActivityNotFoundException) {
             Log.w(TAG, "Settings action unavailable: $action", error)
             showError(getString(R.string.settings_unavailable))
+        }
+    }
+
+    private fun openMapAttribution(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (error: ActivityNotFoundException) {
+            Log.w(TAG, "Cannot open map attribution", error)
+            Toast.makeText(this, R.string.browser_unavailable, Toast.LENGTH_LONG).show()
         }
     }
 
