@@ -41,6 +41,14 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Test English map labels
+        run: node --test src/test/js/labels.test.mjs
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 

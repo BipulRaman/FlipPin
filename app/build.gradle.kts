@@ -53,7 +53,6 @@ android {
 }
 
 dependencies {
-    implementation("org.maplibre.gl:android-sdk:13.0.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.20.0")
     testImplementation("org.robolectric:robolectric:4.17")

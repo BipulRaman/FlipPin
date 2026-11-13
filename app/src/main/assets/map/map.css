@@ -1,0 +1,14 @@
+html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { background: #e2edee; font-family: sans-serif; }
+#message {
+  position: absolute; top: 8px; left: 8px; right: 8px; margin: 0;
+  padding: 10px; border-radius: 8px; color: #173b43; background: #fffffff0;
+  font-size: 13px; pointer-events: none;
+}
+.pin { width: 48px; height: 48px; cursor: grab; }
+.pin span {
+  display: block; position: absolute; left: 12px; top: 10px;
+  width: 20px; height: 20px; border: 3px solid white; border-radius: 50% 50% 50% 0;
+  background: #087e8b; transform: rotate(-45deg);
+  box-shadow: -2px 2px 7px #173b4366;
+}

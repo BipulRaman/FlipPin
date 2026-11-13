@@ -25,6 +25,9 @@ root the device, bypass app protections, or change IP/cellular location.
 - Polished light/dark dashboard, collapsible setup checklist, accessible field labels,
   keyboard-controlled coordinate adjustments, and Android system/keyboard insets.
 - No accounts, API keys, ads, analytics, or cloud backups.
+- Offline mode hides map/search and their online-only controls and disclosures. Coordinate entry,
+  saved pins, World/Area/Fine adjustment sizes, copy, and Start/Apply/Stop remain available.
+  Online features return automatically when Android validates the internet connection.
 - Sessions never automatically resume after reboot or process termination.
 
 ## Device setup and use
@@ -63,7 +66,12 @@ searching/selecting a result, or loading a saved pin only changes the preview, e
 tap **Apply coordinates** explicitly to update the injected location.
 
 Maps require internet and use [OpenFreeMap](https://openfreemap.org/quick_start/)
-vector tiles through MapLibre Native, without an API key or billing account.
+vector tiles through the device's Android WebView and locally bundled MapLibre GL JS,
+without an API key or billing account. Only the map uses WebView; the dashboard, search,
+saved pins, and mock-location service remain native. A current Android System WebView
+with WebGL 2 support is required for the map. Renderer failures show a retry action and
+leave manual coordinates available. Executable map scripts are bundled in the APK,
+not downloaded from a CDN; map content cannot navigate to other sites or access local files.
 Place-name labels prefer English (`name:en` / `name_en`), then Latin-script or
 transliterated names (`name:latin`); local-script-only labels are omitted rather
 than silently switching languages. Road numbers are retained. The map data does
@@ -72,8 +80,10 @@ The map provider receives your IP address and requested map areas;
 FlipPin does not read or upload your device's real location or saved-pin names.
 Transparent 9sp attribution links to [OpenStreetMap's licence](https://www.openstreetmap.org/copyright),
 [OpenMapTiles](https://openmaptiles.org/), and [OpenFreeMap](https://openfreemap.org/).
-MapLibre manages the private on-device map cache; there is no bulk download,
-prefetch, or offline-map download feature. Tile availability is
+WebView manages its normal private HTTP cache; there is no bulk download,
+prefetch, or offline-map download feature. Map and search are hidden without a validated
+internet connection, including Wi-Fi captive portals, and return after reconnecting.
+Your draft, selected pin, camera, and active session are retained. Tile availability is
 best-effort, and load failures show a retry action. Coordinate entry, saved pins,
 and spoofing work without internet. Web Mercator maps cover approximately
 85.0511°S to 85.0511°N; coordinates outside this coverage remain editable/applicable
@@ -105,9 +115,13 @@ FlipPin/
     src/test/java/in/bipul/flippin/
 ```
 
-Stack: **Kotlin + Android Views + MapLibre Native 13.0.2** (BSD-2-Clause), minSdk 26 /
+Stack: **Kotlin + Android Views + Android WebView + MapLibre GL JS 6.16.0** (BSD-3-Clause), minSdk 26 /
 compileSdk and targetSdk 37, Android Gradle Plugin 9.4.1, Gradle 9.8.2, JDK 17+
 (Java 21 in CI). JVM tests use JUnit and Robolectric.
+
+The pinned renderer's distributable modules/CSS and upstream licence notices are in
+`app/src/main/assets/map/vendor/`, copied from the `maplibre-gl@6.16.0` npm package.
+No native map libraries or architecture-specific APKs are required.
 
 Open `app/` in Android Studio, or configure `JAVA_HOME` and `ANDROID_HOME`:
 
@@ -116,6 +130,9 @@ cd app
 .\gradlew.bat testDebugUnitTest lintRelease assembleDebug
 .\gradlew.bat installDebug
 ```
+
+Run the map-label regression tests from the repository root with Node.js 22+:
+`node --test app\src\test\js\labels.test.mjs`.
 
 `installDebug` requires a connected device/emulator. Local release builds use the local
 debug signing key unless `FLIPPIN_KEYSTORE` is configured:

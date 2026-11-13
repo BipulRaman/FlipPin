@@ -6,10 +6,15 @@ import android.content.Context
 import android.content.Intent
 import android.location.Address
 import android.location.Geocoder
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.NetworkInfo
+import android.net.Uri
+import android.webkit.WebResourceRequest
+import android.os.Bundle
+import android.os.Looper
 import android.os.Process
-import android.os.SystemClock
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -24,6 +29,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -31,33 +37,231 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowGeocoder
-import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowNetwork
+import org.robolectric.shadows.ShadowNetworkInfo
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mockConstruction
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.doReturn
 import java.util.Locale
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.geometry.LatLng
+import org.json.JSONObject
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [26, 35], shadows = [ShadowVectorMap::class, ShadowMapLibre::class])
+@Config(sdk = [26, 35])
 class MainActivityTest {
+    @Before
+    fun connectInternet() = setInternet(true)
+
+    private fun setInternet(validated: Boolean) {
+        val connectivity = RuntimeEnvironment.getApplication().getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(connectivity)
+        shadow.setActiveNetworkInfo(ShadowNetworkInfo.newInstance(
+            NetworkInfo.DetailedState.CONNECTED, ConnectivityManager.TYPE_WIFI, 0, true, true
+        ))
+        val network = connectivity.activeNetwork!!
+        val capabilities = NetworkCapabilities()
+        shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        if (validated) shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        shadow.setNetworkCapabilities(network, capabilities)
+        shadow.networkCallbacks.forEach {
+            it.onAvailable(network)
+            it.onCapabilitiesChanged(network, capabilities)
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun CoordinateMapView.event(type: String, data: JSONObject = JSONObject()) {
+        val shadow = shadowOf(requireNotNull(webView))
+        val generation = Uri.parse(shadow.lastLoadedUrl).getQueryParameter("generation")!!.toInt()
+        val script = shadow.lastEvaluatedJavascript
+        val revision = script?.let { JSONObject(it.substringAfter("setState(").dropLast(1)).getInt("revision") } ?: 0
+        data.put("generation", generation).put("type", type).put("revision", revision)
+        (shadow.getJavascriptInterface("FlipPin") as CoordinateMapView.MapBridge).postMessage(data.toString())
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun CoordinateMapView.camera() = Bundle().also(::saveCamera)
+
+    private fun CoordinateMapView.renderedState(): JSONObject {
+        val script = shadowOf(requireNotNull(webView)).lastEvaluatedJavascript
+        return JSONObject(script.substringAfter("setState(").dropLast(1))
+    }
+
     @Test
-    fun mapReplacesLocalNameLabelsWithEnglishLatinFallbackAndKeepsRouteShields() {
+    fun networkLossAndHandoverIgnoreStaleConnectivitySnapshotsAndOldNetworkEvents() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val connectivity = activity.getSystemService(ConnectivityManager::class.java)
+            val callback = shadowOf(connectivity).networkCallbacks.single()
+            val previous = connectivity.activeNetwork!!
+            val capabilities = connectivity.getNetworkCapabilities(previous)!!
+            callback.onLost(previous)
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.online_map).visibility)
+            assertTrue(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            val replacement = ShadowNetwork.newInstance(123)
+            callback.onAvailable(replacement)
+            callback.onCapabilitiesChanged(replacement, capabilities)
+            callback.onLost(previous)
+            callback.onCapabilitiesChanged(previous, NetworkCapabilities())
+            assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.online_map).visibility)
+            callback.onLost(replacement)
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.online_map).visibility)
+            assertNull(activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).webView)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun offlineHidesOnlineContentAndRetainsDraftPinsAdjustmentsAndTheActiveSession() {
+        val serviceController = Robolectric.buildService(MockLocationService::class.java).create()
+        val service = serviceController.get()
+        service.onStartCommand(Intent(service, MockLocationService::class.java).apply {
+            putExtra(MockLocationService.LATITUDE, "12.5")
+            putExtra(MockLocationService.LONGITUDE, "45.25")
+        }, 0, 1)
+        PinStore(service.getSharedPreferences("saved_pins", Context.MODE_PRIVATE))
+            .add("Offline pin", Coordinates(20.0, 30.0))
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            var activity = controller.get()
+            val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
+            pad.event("ready")
+            activity.findViewById<EditText>(R.id.latitude).setText("48.123456789")
+            val camera = pad.camera()
+            setInternet(false)
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.online_search).visibility)
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.online_map).visibility)
+            assertNull(pad.webView)
+            assertEquals("48.123456789", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            assertTrue(activity.findViewById<Button>(R.id.start).isShown)
+            assertEquals(activity.getString(R.string.apply), activity.findViewById<Button>(R.id.start).text.toString())
+            assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.stop).visibility)
+            activity.findViewById<LinearLayout>(R.id.pins).getChildAt(0).performClick()
+            activity.findViewById<Button>(R.id.scale_fine).performClick()
+            activity.findViewById<Button>(R.id.nudge_north).performClick()
+            assertEquals("20.00001", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            assertEquals("12.5", service.getSharedPreferences(MockLocationService.STATE, Context.MODE_PRIVATE)
+                .getString(MockLocationService.LATITUDE, null))
+            assertTrue(MockLocationService.isRunning)
+            controller.recreate()
+            activity = controller.get()
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.online_map).visibility)
+            assertNull(activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).webView)
+            assertEquals("20.00001", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            setInternet(true)
+            assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.online_search).visibility)
+            assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.online_map).visibility)
+            val restoredPad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
+            restoredPad.event("ready")
+            assertEquals(20.00001, restoredPad.renderedState().getJSONObject("point").getDouble("latitude"), 0.0)
+            assertEquals(48.123456789, camera.getDouble("map_latitude"), 0.0)
+            assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+        } finally {
+            controller.pause().stop().destroy()
+            serviceController.destroy()
+        }
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun lateSearchResultsDoNotReappearAfterGoingOfflineAndReconnectAllowsNewSearch() {
+        ShadowGeocoder.setIsPresent(true)
+        val callbacks = mutableListOf<Geocoder.GeocodeListener>()
+        mockConstruction(Geocoder::class.java) { geocoder, _ ->
+            doAnswer {
+                callbacks.add(it.getArgument(2))
+                null
+            }.`when`(geocoder).getFromLocationName(anyString(), anyInt(), any(Geocoder.GeocodeListener::class.java))
+        }.use {
+            val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+            try {
+                val activity = controller.get()
+                val input = activity.findViewById<EditText>(R.id.location_query)
+                val search = activity.findViewById<Button>(R.id.search_location)
+                input.setText("Paris")
+                search.performClick()
+                assertFalse(search.isEnabled)
+                setInternet(false)
+                assertTrue(search.isEnabled)
+                val place = Address(Locale.ENGLISH).apply {
+                    latitude = 48.8584
+                    longitude = 2.2945
+                    setAddressLine(0, "Paris")
+                }
+                callbacks.first().onGeocode(mutableListOf(place))
+                assertEquals(0, activity.findViewById<LinearLayout>(R.id.search_results).childCount)
+                assertEquals(View.GONE, activity.findViewById<View>(R.id.search_status).visibility)
+                setInternet(true)
+                search.performClick()
+                callbacks.last().onGeocode(mutableListOf(place))
+                assertEquals(1, activity.findViewById<LinearLayout>(R.id.search_results).childCount)
+            } finally {
+                controller.pause().stop().destroy()
+            }
+        }
+    }
+
+    @Test
+    fun staleAndInvalidMapMessagesCannotOverwriteNewNativeEdits() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
+            pad.event("ready")
+            val staleRevision = pad.renderedState().getInt("revision")
+            activity.findViewById<EditText>(R.id.latitude).setText("10.123456789")
+            activity.findViewById<EditText>(R.id.longitude).setText("20.987654321")
+            val shadow = shadowOf(requireNotNull(pad.webView))
+            val bridge = shadow.getJavascriptInterface("FlipPin") as CoordinateMapView.MapBridge
+            bridge.postMessage(JSONObject().put("generation", Uri.parse(shadow.lastLoadedUrl)
+                .getQueryParameter("generation")!!.toInt()).put("revision", staleRevision)
+                .put("type", "pick").put("latitude", 5).put("longitude", 6).toString())
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals("10.123456789", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            pad.event("pick", JSONObject().put("latitude", 91).put("longitude", 6))
+            assertEquals("10.123456789", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.map_retry).visibility)
+            val camera = pad.camera()
+            pad.event("camera", JSONObject().put("latitude", 20).put("longitude", 30).put("zoom", -1))
+            assertEquals(camera.getDouble("map_latitude"), pad.camera().getDouble("map_latitude"), 0.0)
+            pad.retryTiles()
+            bridge.postMessage(JSONObject().put("type", "ready").put("generation", -1).toString())
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals("20.987654321", activity.findViewById<EditText>(R.id.longitude).text.toString())
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun mapCanReadOnlyBundledAssetsAndTheHttpsTileProvider() {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         try {
             val pad = controller.get().findViewById<CoordinateMapView>(R.id.coordinate_pad)
-            val updates = Shadow.extract<ShadowVectorMap>(pad.mapView).labelUpdates
-            assertEquals(setOf("place"), updates.keys)
-            val expression = updates.getValue("place").toString()
-            assertTrue(expression.startsWith("[\"case\""))
-            assertTrue(expression.contains("[\"coalesce\", [\"get\", \"name:en\"], \"\"]"))
-            assertTrue(expression.indexOf("name:en") < expression.indexOf("name_en"))
-            assertTrue(expression.indexOf("name_en") < expression.indexOf("name:latin"))
-            assertFalse(expression.contains("[\"get\", \"name\"]"))
-            assertFalse(expression.contains("name:nonlatin"))
+            val browser = requireNotNull(pad.webView)
+            val client = shadowOf(browser).webViewClient
+            fun request(url: String) = mock(WebResourceRequest::class.java).also {
+                doReturn(Uri.parse(url)).`when`(it).url
+            }
+            val document = client.shouldInterceptRequest(browser,
+                request("https://appassets.androidplatform.net/map/index.html"))!!
+            document.data.bufferedReader().use { assertTrue(it.readText().contains("map.js")) }
+            assertTrue(document.responseHeaders.getValue("Content-Security-Policy").contains("script-src 'self'"))
+            assertNull(client.shouldInterceptRequest(browser,
+                request("https://tiles.openfreemap.org/styles/liberty")))
+            for (url in listOf(
+                "file:///data/local/private.txt", "content://private/data",
+                "http://tiles.openfreemap.org/styles/liberty", "https://example.com/script.js",
+                "https://appassets.androidplatform.net/map/../private.txt"
+            )) {
+                assertEquals(403, client.shouldInterceptRequest(browser, request(url))!!.statusCode)
+                assertTrue(client.shouldOverrideUrlLoading(browser, request(url)))
+            }
         } finally {
             controller.pause().stop().destroy()
         }
@@ -106,7 +310,7 @@ class MainActivityTest {
                 results.getChildAt(0).performClick()
                 assertEquals("48.858412345", activity.findViewById<EditText>(R.id.latitude).text.toString())
                 assertEquals("2.294512345", activity.findViewById<EditText>(R.id.longitude).text.toString())
-                assertEquals(13.0, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).map!!.cameraPosition.zoom, 0.0)
+                assertEquals(13.0, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).camera().getDouble("map_zoom"), 0.0)
                 assertEquals(0, results.childCount)
                 assertEquals("12.5", activity.getSharedPreferences(MockLocationService.STATE, Context.MODE_PRIVATE)
                     .getString(MockLocationService.LATITUDE, null))
@@ -277,37 +481,23 @@ class MainActivityTest {
             assertTrue(MockLocationService.isRunning)
             activity.findViewById<Button>(R.id.scale_fine).performClick()
             val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
-            val map = pad.map!!
-            val renderer = Shadow.extract<ShadowVectorMap>(pad.mapView)
-            pad.layout(0, 0, 360, 320)
-            val center = map.cameraPosition.target!!
-            val expected = LatLng(12.516, 45.027)
-            val time = SystemClock.uptimeMillis()
-            assertTrue(renderer.click!!.onMapClick(expected))
+            pad.event("ready")
+            val center = pad.camera()
+            val expected = Coordinates(12.516, 45.027)
+            pad.event("pick", JSONObject().put("latitude", expected.latitude).put("longitude", expected.longitude))
             val selected = Coordinates.parse(
                 activity.findViewById<EditText>(R.id.latitude).text.toString(),
                 activity.findViewById<EditText>(R.id.longitude).text.toString()
             )!!
             assertEquals(expected.latitude, selected.latitude, 0.000001)
             assertEquals(expected.longitude, selected.longitude, 0.000001)
-            assertEquals(center.latitude, map.cameraPosition.target!!.latitude, 1e-9)
-            assertEquals(center.longitude, map.cameraPosition.target!!.longitude, 1e-9)
-            val marker = renderer.marker!!
-            assertEquals(selected.latitude, marker.position.latitude, 1e-9)
-            assertTrue(renderer.longClick!!.onMapLongClick(marker.position))
-            val drag = MotionEvent.obtain(time, time + 1000, MotionEvent.ACTION_MOVE, 200f, 120f, 0)
-            val release = MotionEvent.obtain(time, time + 1100, MotionEvent.ACTION_UP, 200f, 120f, 0)
-            try {
-                assertTrue(pad.dispatchTouchEvent(drag))
-                assertTrue(pad.dispatchTouchEvent(release))
-            } finally {
-                drag.recycle()
-                release.recycle()
-            }
-            val dragged = map.projection.fromScreenLocation(android.graphics.PointF(200f, 120f))
-            assertEquals(dragged.latitude, activity.findViewById<EditText>(R.id.latitude).text.toString().toDouble(), 0.000001)
-            assertEquals(center.latitude, map.cameraPosition.target!!.latitude, 1e-9)
-            assertEquals(center.longitude, map.cameraPosition.target!!.longitude, 1e-9)
+            assertEquals(center.getDouble("map_latitude"), pad.camera().getDouble("map_latitude"), 1e-9)
+            assertEquals(center.getDouble("map_longitude"), pad.camera().getDouble("map_longitude"), 1e-9)
+            pad.event("pick", JSONObject().put("latitude", 12.5161234567).put("longitude", 405.0271234567))
+            assertEquals("12.516123", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            assertEquals("45.027123", activity.findViewById<EditText>(R.id.longitude).text.toString())
+            assertEquals(center.getDouble("map_latitude"), pad.camera().getDouble("map_latitude"), 1e-9)
+            assertEquals(center.getDouble("map_longitude"), pad.camera().getDouble("map_longitude"), 1e-9)
             val state = activity.getSharedPreferences(MockLocationService.STATE, Context.MODE_PRIVATE)
             assertEquals("179.99999", state.getString(MockLocationService.LONGITUDE, null))
             assertTrue(MockLocationService.isRunning)
@@ -327,7 +517,7 @@ class MainActivityTest {
             activity.findViewById<EditText>(R.id.latitude).setText("48.8584")
             activity.findViewById<EditText>(R.id.longitude).setText("2.2945")
             val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
-            Shadow.extract<ShadowVectorMap>(pad.mapView).failure!!.onDidFailLoadingMap("Network unavailable")
+            pad.event("error", JSONObject().put("message", "Network unavailable"))
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.map_retry).visibility)
             activity.findViewById<Button>(R.id.map_retry).performClick()
             assertEquals(View.GONE, activity.findViewById<View>(R.id.map_retry).visibility)
@@ -349,15 +539,16 @@ class MainActivityTest {
             var pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
             assertEquals("90", activity.findViewById<EditText>(R.id.latitude).text.toString())
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.map_limit).visibility)
-            assertNull(Shadow.extract<ShadowVectorMap>(pad.mapView).marker)
-            pad.map!!.cameraPosition = CameraPosition.Builder().target(LatLng(48.8584, 2.2945)).zoom(15.0).build()
-            val center = pad.map!!.cameraPosition.target!!
+            pad.event("ready")
+            assertTrue(pad.renderedState().isNull("point"))
+            pad.event("camera", JSONObject().put("latitude", 48.8584).put("longitude", 2.2945).put("zoom", 15.0))
+            val center = pad.camera()
             controller.recreate()
             activity = controller.get()
             pad = activity.findViewById(R.id.coordinate_pad)
-            assertEquals(15.0, pad.map!!.cameraPosition.zoom, 1e-9)
-            assertEquals(center.latitude, pad.map!!.cameraPosition.target!!.latitude, 1e-9)
-            assertEquals(center.longitude, pad.map!!.cameraPosition.target!!.longitude, 1e-9)
+            assertEquals(15.0, pad.camera().getDouble("map_zoom"), 1e-9)
+            assertEquals(center.getDouble("map_latitude"), pad.camera().getDouble("map_latitude"), 1e-9)
+            assertEquals(center.getDouble("map_longitude"), pad.camera().getDouble("map_longitude"), 1e-9)
             assertEquals("90", activity.findViewById<EditText>(R.id.latitude).text.toString())
             assertEquals("12.123456789", activity.findViewById<EditText>(R.id.longitude).text.toString())
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.map_limit).visibility)

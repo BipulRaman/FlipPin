@@ -18,6 +18,9 @@ import android.graphics.Typeface
 import android.location.Geocoder
 import android.location.LocationManager
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
@@ -53,6 +56,25 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private lateinit var pad: CoordinateMapView
     private lateinit var locationSearch: LocationSearch
     private var searching = false
+    private var searchGeneration = 0
+    private var online = false
+    private var monitoringNetwork = false
+    private var defaultNetwork: Network? = null
+    private val connectivity by lazy { getSystemService(ConnectivityManager::class.java) }
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = updateConnectivity {
+            defaultNetwork = network
+        }
+        override fun onLost(network: Network) = updateConnectivity {
+            if (defaultNetwork == network) {
+                defaultNetwork = null
+                renderConnectivity(null)
+            }
+        }
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = updateConnectivity {
+            if (defaultNetwork == network) renderConnectivity(capabilities)
+        }
+    }
     private var pending: Coordinates? = null
     private var updatingFields = false
     private var selectedPinId: String? = null
@@ -168,6 +190,10 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     override fun onStart() {
         super.onStart()
         state.registerOnSharedPreferenceChangeListener(this)
+        monitoringNetwork = true
+        defaultNetwork = connectivity.activeNetwork
+        renderConnectivity(connectivity.getNetworkCapabilities(defaultNetwork))
+        connectivity.registerDefaultNetworkCallback(networkCallback)
         renderState()
     }
 
@@ -188,12 +214,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         super.onDestroy()
     }
 
-    override fun onLowMemory() {
-        super.onLowMemory()
-        pad.lowMemory()
-    }
-
     override fun onStop() {
+        monitoringNetwork = false
+        connectivity.unregisterNetworkCallback(networkCallback)
         state.unregisterOnSharedPreferenceChangeListener(this)
         super.onStop()
     }
@@ -220,7 +243,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     override fun onSharedPreferenceChanged(preferences: SharedPreferences, key: String?) = renderState()
 
     private fun searchLocation() {
-        if (searching) return
+        if (!online || searching) return
         val input = findViewById<EditText>(R.id.location_query)
         val query = input.text.toString().trim()
         input.error = null
@@ -235,13 +258,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             return
         }
         searching = true
+        val request = ++searchGeneration
         input.isEnabled = false
         findViewById<Button>(R.id.search_location).isEnabled = false
         showSearchStatus(getString(R.string.search_loading))
         getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
         locationSearch.search(query) { result ->
             runOnUiThread {
-                if (!isDestroyed && !isFinishing) {
+                if (!isDestroyed && !isFinishing && online && request == searchGeneration) {
                     searching = false
                     input.isEnabled = true
                     findViewById<Button>(R.id.search_location).isEnabled = true
@@ -255,6 +279,37 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 }
             }
         }
+    }
+
+    private fun updateConnectivity(update: () -> Unit) = runOnUiThread {
+        if (monitoringNetwork && !isDestroyed) update()
+    }
+
+    private fun renderConnectivity(capabilities: NetworkCapabilities?) {
+        val available = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        if (online == available) return
+        if (online && !available) {
+            searchGeneration++
+            searching = false
+            findViewById<EditText>(R.id.location_query).apply {
+                isEnabled = true
+                if (hasFocus()) {
+                    getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(windowToken, 0)
+                }
+                clearFocus()
+            }
+            findViewById<Button>(R.id.search_location).isEnabled = true
+            findViewById<View>(R.id.search_status).visibility = View.GONE
+            findViewById<LinearLayout>(R.id.search_results).removeAllViews()
+        }
+        online = available
+        val visibility = if (online) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.online_search).visibility = visibility
+        findViewById<View>(R.id.online_map).visibility = visibility
+        findViewById<TextView>(R.id.pad_hint).setText(if (online) R.string.pad_hint else R.string.offline_hint)
+        pad.setOnline(online)
+        updatePreview(recenterPad = false)
     }
 
     private fun showSearchStatus(message: String, failed: Boolean = false) {
@@ -485,7 +540,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 -CoordinateMapView.MAP_LATITUDE_LIMIT..CoordinateMapView.MAP_LATITUDE_LIMIT
             ) View.VISIBLE else View.GONE
         findViewById<TextView>(R.id.preview).text = point?.display() ?: getString(
-            if (latitude.text.isEmpty() && longitude.text.isEmpty()) R.string.pad_empty else R.string.pad_invalid
+            if (latitude.text.isEmpty() && longitude.text.isEmpty()) {
+                if (online) R.string.pad_empty else R.string.offline_empty
+            } else R.string.pad_invalid
         )
         findViewById<ImageButton>(R.id.copy_coordinates).apply {
             isEnabled = point != null

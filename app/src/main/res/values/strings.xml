@@ -34,6 +34,8 @@
     <string name="accuracy_stat">10 m accuracy</string>
     <string name="place_pin">Place your pin</string>
     <string name="pad_hint">Pan and pinch to zoom. Tap a place to drop your pin; long-press the pin to drag it.</string>
+    <string name="offline_hint">Enter coordinates or choose a saved pin. Search and maps return when internet is available.</string>
+    <string name="offline_empty">Enter coordinates or choose a saved pin</string>
     <string name="pad_empty">Tap the map or enter coordinates</string>
     <string name="pad_invalid">Finish entering valid coordinates</string>
     <string name="pad_accessibility">English-language map location picker. %1$s. Use the coordinate fields and directional buttons to make precise adjustments.</string>
@@ -50,7 +52,7 @@
     <string name="search_failed">Could not search for places. Check internet and tap Search location to retry.</string>
     <string name="search_selected">Selected: %1$s. Preview only; tap Start or Apply coordinates when ready.</string>
     <string name="map_privacy">English map labels, with Latin-script names where no English name exists. Viewed areas and your IP address are sent to OpenFreeMap. Manual coordinates and saved pins also work without internet.</string>
-    <string name="map_retry">Some map tiles could not load. Check internet and tap to retry.</string>
+    <string name="map_retry">Map could not load. Tap to retry. If it still fails, update Android System WebView or enter coordinates below.</string>
     <string name="map_limit">The map ends at approximately 85° north/south. Your exact polar coordinates are preserved in the fields and can still be applied.</string>
     <string name="browser_unavailable">No browser is available. Map licence: https://www.openstreetmap.org/copyright</string>
     <string name="scale_world">World</string>
