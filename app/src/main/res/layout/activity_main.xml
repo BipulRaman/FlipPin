@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/screen"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/accent"
+            android:textSize="38sp"
+            android:textStyle="bold" />
+        <TextView style="@style/SectionTitle" android:text="@string/tagline" />
+        <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/intro" />
+        <LinearLayout style="@style/Card">
+            <TextView
+                android:id="@+id/status"
+                style="@style/SectionTitle"
+                android:accessibilityLiveRegion="polite"
+                android:text="@string/idle"
+                android:textSize="16sp" />
+            <TextView android:id="@+id/status_detail" style="@style/Body"
+                android:layout_marginTop="8dp" android:text="@string/idle_detail" />
+            <TextView android:id="@+id/error" style="@style/Body"
+                android:accessibilityLiveRegion="polite"
+                android:layout_marginTop="8dp" android:textColor="@color/error"
+                android:visibility="gone" />
+            <Button android:id="@+id/stop"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:text="@string/stop" android:enabled="false" />
+        </LinearLayout>
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/SectionTitle" android:text="@string/destination" />
+            <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/coordinate_hint" />
+            <TextView style="@style/Body" android:layout_marginTop="16dp"
+                android:labelFor="@id/latitude" android:text="@string/latitude" />
+            <EditText android:id="@+id/latitude"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:importantForAutofill="no"
+                android:inputType="numberDecimal|numberSigned" android:singleLine="true"
+                android:imeOptions="actionNext" android:selectAllOnFocus="true" />
+            <TextView style="@style/Body" android:layout_marginTop="8dp"
+                android:labelFor="@id/longitude" android:text="@string/longitude" />
+            <EditText android:id="@+id/longitude"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:importantForAutofill="no"
+                android:inputType="numberDecimal|numberSigned" android:singleLine="true"
+                android:imeOptions="actionDone" android:selectAllOnFocus="true" />
+            <Button android:id="@+id/start"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="12dp" android:text="@string/start" />
+            <Button android:id="@+id/save_pin"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/save_pin" />
+        </LinearLayout>
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/SectionTitle" android:text="@string/saved_pins" />
+            <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/saved_hint" />
+            <LinearLayout android:id="@+id/pins"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="12dp" android:orientation="vertical" />
+        </LinearLayout>
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/SectionTitle" android:text="@string/setup" />
+            <TextView android:id="@+id/setup_status" style="@style/Body"
+                android:layout_marginTop="8dp" />
+            <TextView style="@style/Body" android:layout_marginTop="12dp" android:text="@string/setup_instructions" />
+            <Button android:id="@+id/developer_options"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:text="@string/developer_options" />
+            <Button android:id="@+id/location_settings"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/location_settings" />
+        </LinearLayout>
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/SectionTitle" android:text="@string/limitations_title" />
+            <TextView style="@style/Body" android:layout_marginTop="8dp" android:text="@string/limitations" />
+        </LinearLayout>
+        <TextView android:id="@+id/version" style="@style/Body"
+            android:layout_marginTop="20dp" android:gravity="center" />
+    </LinearLayout>
+</ScrollView>
