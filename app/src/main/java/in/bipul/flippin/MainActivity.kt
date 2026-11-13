@@ -35,15 +35,18 @@ import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.EditorInfo
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ListPopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -57,7 +60,11 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private lateinit var longitude: EditText
     private lateinit var pad: CoordinateMapView
     private lateinit var locationSearch: LocationSearch
-    private var searching = false
+    private lateinit var query: EditText
+    internal lateinit var suggestions: ListPopupWindow
+    private lateinit var suggestionAdapter: ArrayAdapter<PlaceResult>
+    private val suggestTask = Runnable { lookUpPlaces(explicit = false) }
+    private var updatingQuery = false
     private var searchGeneration = 0
     private var online = false
     private var monitoringNetwork = false
@@ -82,7 +89,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private var selectedPinId: String? = null
     private var setupExpanded = false
     private var imeVisible = false
-    private var setupReady = false
+    private var setupReady: Boolean? = null
+    private var permissionBlocked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,14 +119,36 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         longitude = findViewById(R.id.longitude)
         pad = findViewById(R.id.coordinate_pad)
         locationSearch = LocationSearch(Geocoder(this, Locale.ENGLISH))
+        query = findViewById(R.id.location_query)
+        suggestionAdapter = object : ArrayAdapter<PlaceResult>(this, R.layout.item_suggestion) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+                (super.getView(position, convertView, parent) as TextView).apply { text = getItem(position)?.name }
+        }
+        suggestions = ListPopupWindow(this).apply {
+            anchorView = findViewById(R.id.search_box)
+            setAdapter(suggestionAdapter)
+            setBackgroundDrawable(getDrawable(R.drawable.card))
+            isModal = false
+            inputMethodMode = ListPopupWindow.INPUT_METHOD_NEEDED
+            verticalOffset = dp(4)
+            setOnItemClickListener { _, _, position, _ -> suggestionAdapter.getItem(position)?.let(::selectPlace) }
+        }
         findViewById<View>(R.id.search_location).setOnClickListener { searchLocation() }
-        findViewById<EditText>(R.id.location_query).setOnFocusChangeListener { _, _ -> renderActionBar() }
-        findViewById<EditText>(R.id.location_query).setOnEditorActionListener { _, action, _ ->
+        query.setOnFocusChangeListener { _, focused ->
+            if (!focused) suggestions.dismiss()
+            renderActionBar()
+        }
+        query.setOnEditorActionListener { _, action, _ ->
             if (action == EditorInfo.IME_ACTION_SEARCH) {
                 searchLocation()
                 true
             } else false
         }
+        query.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(text: Editable?) = onQueryEdited()
+        })
         pad.onTileFailureChanged = { failed ->
             findViewById<View>(R.id.map_retry).visibility = if (failed) View.VISIBLE else View.GONE
         }
@@ -156,7 +186,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         latitude.setText(state.getString(MockLocationService.LATITUDE, ""))
         longitude.setText(state.getString(MockLocationService.LONGITUDE, ""))
-        setupExpanded = savedInstanceState?.getBoolean("setup_expanded") ?: false
+        setupExpanded = savedInstanceState?.takeIf { it.containsKey("setup_expanded") }
+            ?.getBoolean("setup_expanded") ?: !(mockAllowed() && locationEnabled() && hasLocationPermission())
         selectedPinId = savedInstanceState?.getString("selected_pin")
         pending = savedInstanceState?.let {
             Coordinates.parse(it.getString("pending_lat").orEmpty(), it.getString("pending_lon").orEmpty())
@@ -171,6 +202,13 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         findViewById<Button>(R.id.location_settings).setOnClickListener {
             openSettings(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+        }
+        findViewById<Button>(R.id.allow_permission).setOnClickListener {
+            if (permissionBlocked) {
+                openSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+            } else {
+                requestPermissions(missingPermissions(), SETUP_PERMISSIONS)
+            }
         }
         findViewById<Button>(R.id.setup_toggle).setOnClickListener {
             setSetupExpanded(!setupExpanded)
@@ -233,7 +271,15 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         super.onPause()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Quick-settings toggles do not pause the activity, so re-check setup when focus returns.
+        if (hasFocus) renderSetup()
+    }
+
     override fun onDestroy() {
+        query.removeCallbacks(suggestTask)
+        suggestions.dismiss()
         locationSearch.close()
         pad.destroyMap()
         super.onDestroy()
@@ -259,7 +305,13 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
-        super.onRestoreInstanceState(savedInstanceState)
+        // Restoring the search text must not send another lookup.
+        updatingQuery = true
+        try {
+            super.onRestoreInstanceState(savedInstanceState)
+        } finally {
+            updatingQuery = false
+        }
         selectedPinId = savedInstanceState.getString("selected_pin")
         updatePreview(recenterPad = false)
         pad.restoreCamera(savedInstanceState)
@@ -267,43 +319,89 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onSharedPreferenceChanged(preferences: SharedPreferences, key: String?) = renderState()
 
+    private fun onQueryEdited() {
+        if (updatingQuery) return
+        query.removeCallbacks(suggestTask)
+        searchGeneration++
+        query.error = null
+        findViewById<View>(R.id.search_status).visibility = View.GONE
+        if (online && query.text.trim().length >= MIN_SUGGESTION_LENGTH) {
+            query.postDelayed(suggestTask, SUGGESTION_DELAY_MS)
+        } else {
+            suggestions.dismiss()
+        }
+    }
+
     private fun searchLocation() {
-        if (!online || searching) return
-        val input = findViewById<EditText>(R.id.location_query)
-        val query = input.text.toString().trim()
-        input.error = null
-        if (query.isBlank()) {
-            input.error = getString(R.string.search_required)
-            input.requestFocus()
+        query.removeCallbacks(suggestTask)
+        lookUpPlaces(explicit = true)
+    }
+
+    private fun lookUpPlaces(explicit: Boolean) {
+        if (!online) return
+        val text = query.text.toString().trim()
+        query.error = null
+        if (text.isEmpty()) {
+            query.error = getString(R.string.search_required)
+            query.requestFocus()
             return
         }
-        findViewById<LinearLayout>(R.id.search_results).removeAllViews()
         if (!Geocoder.isPresent()) {
+            suggestions.dismiss()
             showSearchStatus(getString(R.string.search_unavailable), failed = true)
             return
         }
-        searching = true
         val request = ++searchGeneration
-        input.isEnabled = false
-        findViewById<View>(R.id.search_location).isEnabled = false
-        showSearchStatus(getString(R.string.search_loading))
-        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(input.windowToken, 0)
-        locationSearch.search(query) { result ->
+        if (explicit) {
+            showSearchStatus(getString(R.string.search_loading))
+            getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(query.windowToken, 0)
+        }
+        locationSearch.search(text) { result ->
             runOnUiThread {
-                if (!isDestroyed && !isFinishing && online && request == searchGeneration) {
-                    searching = false
-                    input.isEnabled = true
-                    findViewById<View>(R.id.search_location).isEnabled = true
-                    result.fold(
-                        onSuccess = { places -> renderSearchResults(places) },
-                        onFailure = { error ->
-                            Log.w(TAG, "Location search failed", error)
-                            showSearchStatus(getString(R.string.search_failed), failed = true)
-                        }
-                    )
-                }
+                if (isDestroyed || isFinishing || !online || request != searchGeneration) return@runOnUiThread
+                result.fold(
+                    onSuccess = { places -> showSuggestions(places, explicit) },
+                    onFailure = { error ->
+                        Log.w(TAG, "Location search failed", error)
+                        suggestions.dismiss()
+                        showSearchStatus(getString(R.string.search_failed), failed = true)
+                    }
+                )
             }
         }
+    }
+
+    private fun showSuggestions(places: List<PlaceResult>, explicit: Boolean) {
+        findViewById<View>(R.id.search_status).visibility = View.GONE
+        suggestionAdapter.clear()
+        suggestionAdapter.addAll(places)
+        when {
+            places.isEmpty() -> {
+                suggestions.dismiss()
+                if (explicit) showSearchStatus(getString(R.string.search_empty))
+            }
+            explicit && places.size == 1 -> selectPlace(places.single())
+            findViewById<View>(R.id.search_box).isAttachedToWindow -> suggestions.show()
+        }
+    }
+
+    private fun selectPlace(place: PlaceResult) {
+        suggestions.dismiss()
+        query.removeCallbacks(suggestTask)
+        searchGeneration++
+        updatingQuery = true
+        try {
+            query.setText(place.name)
+            query.setSelection(query.length())
+        } finally {
+            updatingQuery = false
+        }
+        query.clearFocus()
+        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(query.windowToken, 0)
+        setCoordinateInputs(place.coordinates)
+        pad.zoomTo(CoordinateMapView.AREA_ZOOM)
+        showSearchStatus(getString(R.string.search_selected, place.name))
+        findViewById<ScrollView>(R.id.content_scroll).smoothScrollTo(0, findViewById<View>(R.id.online_map).top)
     }
 
     private fun updateConnectivity(update: () -> Unit) = runOnUiThread {
@@ -316,17 +414,13 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         if (online == available) return
         if (online && !available) {
             searchGeneration++
-            searching = false
-            findViewById<EditText>(R.id.location_query).apply {
-                isEnabled = true
-                if (hasFocus()) {
-                    getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(windowToken, 0)
-                }
-                clearFocus()
+            query.removeCallbacks(suggestTask)
+            suggestions.dismiss()
+            if (query.hasFocus()) {
+                getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(query.windowToken, 0)
             }
-            findViewById<View>(R.id.search_location).isEnabled = true
+            query.clearFocus()
             findViewById<View>(R.id.search_status).visibility = View.GONE
-            findViewById<LinearLayout>(R.id.search_results).removeAllViews()
         }
         online = available
         val visibility = if (online) View.VISIBLE else View.GONE
@@ -355,37 +449,6 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             text = message
             visibility = View.VISIBLE
             setTextColor(getColor(if (failed) R.color.error else R.color.muted))
-        }
-    }
-
-    private fun renderSearchResults(places: List<PlaceResult>) {
-        showSearchStatus(getString(if (places.isEmpty()) R.string.search_empty else R.string.search_choose))
-        val results = findViewById<LinearLayout>(R.id.search_results)
-        places.forEach { place ->
-            results.addView(TextView(this).apply {
-                text = place.name
-                textSize = 14f
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                gravity = Gravity.CENTER_VERTICAL
-                setTextColor(getColor(R.color.text))
-                setBackgroundResource(R.drawable.pin_card)
-                setPadding(dp(12), dp(8), dp(12), dp(8))
-                minimumHeight = dp(48)
-                isFocusable = true
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(4) }
-                setOnClickListener {
-                    setCoordinateInputs(place.coordinates)
-                    pad.zoomTo(CoordinateMapView.AREA_ZOOM)
-                    results.removeAllViews()
-                    showSearchStatus(getString(R.string.search_selected, place.name))
-                    this@MainActivity.findViewById<EditText>(R.id.location_query).clearFocus()
-                    this@MainActivity.findViewById<ScrollView>(R.id.content_scroll)
-                        .smoothScrollTo(0, this@MainActivity.findViewById<View>(R.id.online_map).top)
-                }
-            })
         }
     }
 
@@ -436,31 +499,46 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             findViewById<ScrollView>(R.id.content_scroll).smoothScrollTo(0, 0)
             return
         }
-        val permissions = mutableListOf<String>()
-        if (!hasLocationPermission()) {
-            permissions += Manifest.permission.ACCESS_COARSE_LOCATION
-            permissions += Manifest.permission.ACCESS_FINE_LOCATION
-        }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissions += Manifest.permission.POST_NOTIFICATIONS
-        }
+        val permissions = missingPermissions()
         if (permissions.isNotEmpty()) {
             pending = point
-            requestPermissions(permissions.toTypedArray(), PERMISSIONS)
+            requestPermissions(permissions, PERMISSIONS)
         } else {
             start(point)
         }
     }
 
+    private fun missingPermissions(): Array<String> = buildList {
+        if (!hasLocationPermission()) {
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.toTypedArray()
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != PERMISSIONS) return
-        val point = pending ?: return
-        pending = null
-        if (hasLocationPermission()) start(point)
-        else showError(getString(R.string.location_permission_required))
+        if (requestCode != PERMISSIONS && requestCode != SETUP_PERMISSIONS) return
+        val point = if (requestCode == PERMISSIONS) pending else null
+        if (requestCode == PERMISSIONS) pending = null
+        // An empty result means the request was interrupted rather than answered.
+        if (grantResults.isNotEmpty()) {
+            if (hasLocationPermission()) {
+                point?.let(::start)
+            } else {
+                // Without a rationale after a denial, Android will not show the prompt again.
+                permissionBlocked = !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) &&
+                    !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_COARSE_LOCATION)
+                showError(getString(
+                    if (permissionBlocked) R.string.location_permission_blocked else R.string.location_permission_required
+                ))
+                setSetupExpanded(true)
+            }
+        }
         renderSetup()
     }
 
@@ -510,26 +588,45 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     private fun renderSetup() {
-        val checks = listOf(
-            Triple(R.id.check_mock, mockAllowed(), Pair(R.string.check_mock_ready, R.string.check_mock_needed)),
-            Triple(R.id.check_location, locationEnabled(), Pair(R.string.check_location_ready, R.string.check_location_needed)),
-            Triple(R.id.check_permission, hasLocationPermission(), Pair(R.string.check_permission_ready, R.string.check_permission_needed))
-        )
-        checks.forEach { (id, ready, labels) ->
-            findViewById<TextView>(id).apply {
-                setText(if (ready) labels.first else labels.second)
-                setTextColor(getColor(if (ready) R.color.success else R.color.muted))
-            }
-        }
-        val ready = checks.count { it.second }
+        val mock = mockAllowed()
+        val location = locationEnabled()
+        val permission = hasLocationPermission()
+        if (permission) permissionBlocked = false
+        renderCheck(R.id.check_mock, R.id.developer_options, mock, R.string.check_mock_ready, R.string.check_mock_needed)
+        renderCheck(R.id.check_location, R.id.location_settings, location,
+            R.string.check_location_ready, R.string.check_location_needed)
+        renderCheck(R.id.check_permission, R.id.allow_permission, permission,
+            R.string.check_permission_ready, R.string.check_permission_needed)
+        findViewById<View>(R.id.mock_hint).visibility = if (mock) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.permission_hint).visibility = if (permission) View.GONE else View.VISIBLE
+        findViewById<Button>(R.id.allow_permission)
+            .setText(if (permissionBlocked) R.string.app_settings else R.string.allow_permission)
+        val ready = listOf(mock, location, permission).count { it }
         findViewById<TextView>(R.id.setup_status).text = getString(R.string.setup_progress, ready)
-        setupReady = ready == checks.size
-        renderSetupCard()
+        val complete = ready == 3
+        val previous = setupReady
+        setupReady = complete
+        when {
+            previous == true && !complete -> setSetupExpanded(true)
+            previous == false && complete && setupExpanded -> {
+                setSetupExpanded(false)
+                Toast.makeText(this, R.string.setup_complete, Toast.LENGTH_SHORT).show()
+            }
+            else -> renderSetupCard()
+        }
+    }
+
+    private fun renderCheck(textId: Int, actionId: Int, ready: Boolean, readyText: Int, neededText: Int) {
+        findViewById<TextView>(textId).apply {
+            setText(if (ready) readyText else neededText)
+            setTextColor(getColor(if (ready) R.color.success else R.color.text))
+        }
+        findViewById<View>(actionId).visibility = if (ready) View.GONE else View.VISIBLE
     }
 
     private fun renderSetupCard() {
         findViewById<View>(R.id.setup_card).visibility =
-            if (setupReady && !setupExpanded) View.GONE else View.VISIBLE
+            if (setupReady == true && !setupExpanded) View.GONE else View.VISIBLE
     }
 
     private fun renderActionBar() {
@@ -641,11 +738,13 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
     }
 
-    private fun openSettings(action: String) {
+    private fun openSettings(action: String) = openSettings(Intent(action))
+
+    private fun openSettings(intent: Intent) {
         try {
-            startActivity(Intent(action))
+            startActivity(intent)
         } catch (error: ActivityNotFoundException) {
-            Log.w(TAG, "Settings action unavailable: $action", error)
+            Log.w(TAG, "Settings action unavailable: ${intent.action}", error)
             showError(getString(R.string.settings_unavailable))
         }
     }
@@ -790,6 +889,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     companion object {
         private const val PERMISSIONS = 1
+        private const val SETUP_PERMISSIONS = 2
+        private const val MIN_SUGGESTION_LENGTH = 3
+        private const val SUGGESTION_DELAY_MS = 350L
         private const val TAG = "MainActivity"
     }
 }

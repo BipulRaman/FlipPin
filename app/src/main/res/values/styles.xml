@@ -56,6 +56,27 @@
         <item name="android:textSize">14sp</item>
         <item name="android:background">?android:attr/selectableItemBackground</item>
     </style>
+    <style name="SetupRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+    </style>
+    <style name="SetupCheck" parent="Body">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginEnd">8dp</item>
+        <item name="android:textColor">@color/text</item>
+    </style>
+    <!-- 32dp visual button inside a 48dp touch target. -->
+    <style name="SetupAction" parent="TextAction">
+        <item name="android:background">@drawable/setup_button</item>
+        <item name="android:minWidth">64dp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:textSize">13sp</item>
+    </style>
     <style name="FieldLabel" parent="Body">
         <item name="android:textSize">12sp</item>
         <item name="android:lineSpacingExtra">0dp</item>

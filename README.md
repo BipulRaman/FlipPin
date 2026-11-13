@@ -49,12 +49,13 @@ Requires **Android 8.0 or newer**. No root is needed.
 6. To end a session, use **Stop** in the app or notification. The test providers
    are removed so Android can return to normal location fixes.
 
-Type a city, address, or landmark in the search box, tap the magnifier at the end of the box
-(or the keyboard Search key), then choose a result to move the preview pin and zoom
-to the area. Search uses Android's device-provided `Geocoder`, not the public
-Nominatim API, and only runs when submitted, never while typing. English results
+Start typing a city, address, or landmark in the search box: after three characters and a
+short pause, matching places appear in a dropdown under the box. Tap a suggestion to fill the
+box, move the preview pin, and zoom to the area. The magnifier at the end of the box (or the
+keyboard Search key) searches immediately and selects a single match directly. Search uses
+Android's device-provided `Geocoder`, not the public Nominatim API. English results
 are requested regardless of the phone's language (the provider controls available translations). The device's
-geocoding provider receives the entered search text; avoid sensitive information.
+geocoding provider receives what you type for suggestions; avoid sensitive information.
 Availability, connectivity requirements, and search coverage depend on the device/provider.
 Missing service, connection failures, and empty results are shown explicitly; manual
 coordinates and map selection remain available. No extra API key is required.

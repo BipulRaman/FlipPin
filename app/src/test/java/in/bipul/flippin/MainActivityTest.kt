@@ -1,6 +1,10 @@
 package `in`.bipul.flippin
 
 import android.app.AppOpsManager
+import android.provider.Settings
+import android.location.LocationManager
+import android.content.pm.PackageManager
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -46,6 +50,7 @@ import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.doReturn
+import java.time.Duration
 import java.util.Locale
 import org.json.JSONObject
 import kotlin.math.asin
@@ -200,21 +205,16 @@ class MainActivityTest {
                 val search = activity.findViewById<View>(R.id.search_location)
                 input.setText("Paris")
                 search.performClick()
-                assertFalse(search.isEnabled)
                 setInternet(false)
-                assertTrue(search.isEnabled)
-                val place = Address(Locale.ENGLISH).apply {
-                    latitude = 48.8584
-                    longitude = 2.2945
-                    setAddressLine(0, "Paris")
-                }
-                callbacks.first().onGeocode(mutableListOf(place))
-                assertEquals(0, activity.findViewById<LinearLayout>(R.id.search_results).childCount)
+                val places = mutableListOf(place("Paris, France", 48.8566, 2.3522), place("Paris, Texas", 33.66, -95.55))
+                callbacks.single().onGeocode(places)
+                assertFalse(activity.suggestions.isShowing)
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.search_status).visibility)
                 setInternet(true)
                 search.performClick()
-                callbacks.last().onGeocode(mutableListOf(place))
-                assertEquals(1, activity.findViewById<LinearLayout>(R.id.search_results).childCount)
+                callbacks.last().onGeocode(places)
+                assertTrue(activity.suggestions.isShowing)
+                assertEquals(2, activity.suggestions.listView!!.adapter.count)
             } finally {
                 controller.pause().stop().destroy()
             }
@@ -292,19 +292,20 @@ class MainActivityTest {
             putExtra(MockLocationService.LATITUDE, "12.5")
             putExtra(MockLocationService.LONGITUDE, "45.25")
         }, 0, 1)
-        val matches = mutableListOf(Address(Locale.ENGLISH).apply {
-            latitude = 48.858412345
-            longitude = 2.294512345
-            setAddressLine(0, "Eiffel Tower, Paris")
-        })
+        val eiffel = place("Eiffel Tower, Paris", 48.858412345, 2.294512345)
+        val louvre = place("Louvre Museum, Paris", 48.860611, 2.337644)
+        val requested = mutableListOf<String>()
         mockConstruction(Geocoder::class.java) { geocoder, construction ->
             assertEquals(Locale.ENGLISH, construction.arguments()[1])
             doAnswer {
                 val listener = it.getArgument<Geocoder.GeocodeListener>(2)
-                when (it.getArgument<String>(0)) {
+                val query = it.getArgument<String>(0)
+                requested += query
+                when (query) {
                     "Nowhere" -> listener.onGeocode(mutableListOf())
                     "Offline" -> listener.onError("Network unavailable")
-                    else -> listener.onGeocode(matches)
+                    "Louvre" -> listener.onGeocode(mutableListOf(louvre))
+                    else -> listener.onGeocode(mutableListOf(eiffel, louvre))
                 }
                 null
             }.`when`(geocoder).getFromLocationName(anyString(), anyInt(), any(Geocoder.GeocodeListener::class.java))
@@ -315,38 +316,47 @@ class MainActivityTest {
                 val input = activity.findViewById<EditText>(R.id.location_query)
                 val button = activity.findViewById<View>(R.id.search_location)
                 val status = activity.findViewById<TextView>(R.id.search_status)
-                val results = activity.findViewById<LinearLayout>(R.id.search_results)
                 button.performClick()
                 assertNotNull(input.error)
-                input.setText("Paris")
-                button.performClick()
-                assertEquals(1, results.childCount)
+                for (typed in listOf("P", "Pa", "Par", "Pari")) input.setText(typed)
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+                assertEquals(listOf("Pari"), requested)
+                assertTrue(activity.suggestions.isShowing)
+                assertEquals(2, activity.suggestions.listView!!.adapter.count)
                 assertEquals("12.5", activity.findViewById<EditText>(R.id.latitude).text.toString())
-                results.getChildAt(0).performClick()
+                activity.suggestions.performItemClick(0)
+                assertFalse(activity.suggestions.isShowing)
+                assertEquals("Eiffel Tower, Paris", input.text.toString())
                 assertEquals("48.858412345", activity.findViewById<EditText>(R.id.latitude).text.toString())
                 assertEquals("2.294512345", activity.findViewById<EditText>(R.id.longitude).text.toString())
                 assertEquals(13.0, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).camera().getDouble("map_zoom"), 0.0)
-                assertEquals(0, results.childCount)
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+                assertEquals(1, requested.size)
                 assertEquals("12.5", activity.getSharedPreferences(MockLocationService.STATE, Context.MODE_PRIVATE)
                     .getString(MockLocationService.LATITUDE, null))
                 assertTrue(MockLocationService.isRunning)
                 assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+                input.setText("Louvre")
+                button.performClick()
+                assertFalse(activity.suggestions.isShowing)
+                assertEquals("48.860611", activity.findViewById<EditText>(R.id.latitude).text.toString())
                 input.setText("Nowhere")
                 button.performClick()
                 assertEquals(activity.getString(R.string.search_empty), status.text.toString())
                 input.setText("Offline")
                 button.performClick()
                 assertEquals(activity.getString(R.string.search_failed), status.text.toString())
-                assertEquals(0, results.childCount)
-                assertTrue(button.isEnabled)
-                assertTrue(input.isEnabled)
-                assertEquals("48.858412345", activity.findViewById<EditText>(R.id.latitude).text.toString())
+                assertFalse(activity.suggestions.isShowing)
+                assertEquals("48.860611", activity.findViewById<EditText>(R.id.latitude).text.toString())
                 input.setText("Paris")
                 input.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH)
-                assertEquals(1, results.childCount)
+                assertTrue(activity.suggestions.isShowing)
+                val searches = requested.size
                 controller.recreate()
                 assertEquals("Paris", controller.get().findViewById<EditText>(R.id.location_query).text.toString())
-                assertEquals(0, controller.get().findViewById<LinearLayout>(R.id.search_results).childCount)
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+                assertFalse(controller.get().suggestions.isShowing)
+                assertEquals(searches, requested.size)
             } finally {
                 controller.pause().stop().destroy()
                 serviceController.destroy()
@@ -584,15 +594,76 @@ class MainActivityTest {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         try {
             var activity = controller.get()
-            assertEquals(View.GONE, activity.findViewById<View>(R.id.setup_details).visibility)
-            activity.findViewById<Button>(R.id.setup_toggle).performClick()
-            controller.recreate()
-            activity = controller.get()
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.setup_details).visibility)
             activity.findViewById<Button>(R.id.setup_toggle).performClick()
             assertEquals(View.GONE, activity.findViewById<View>(R.id.setup_details).visibility)
+            controller.recreate()
+            activity = controller.get()
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.setup_details).visibility)
+            activity.findViewById<Button>(R.id.setup_toggle).performClick()
+            assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.setup_details).visibility)
         } finally {
             controller.pause().stop().destroy()
         }
+    }
+
+    @Test
+    fun setupStepThreeAsksForLocationPermissionInPlaceAndCompletesSetup() {
+        val application = RuntimeEnvironment.getApplication()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            shadowOf(activity.getSystemService(AppOpsManager::class.java)).setMode(
+                AppOpsManager.OPSTR_MOCK_LOCATION, Process.myUid(), activity.packageName, AppOpsManager.MODE_ALLOWED
+            )
+            shadowOf(activity.getSystemService(LocationManager::class.java)).apply {
+                setLocationEnabled(true)
+                setProviderEnabled(LocationManager.GPS_PROVIDER, true)
+            }
+            controller.pause().resume()
+            val check = activity.findViewById<TextView>(R.id.check_permission)
+            assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.setup_details).visibility)
+            assertEquals(activity.getString(R.string.check_permission_needed), check.text.toString())
+            activity.findViewById<Button>(R.id.allow_permission).performClick()
+            val request = shadowOf(activity).lastRequestedPermission
+            assertTrue(Manifest.permission.ACCESS_FINE_LOCATION in request.requestedPermissions)
+            shadowOf(application).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+            activity.onRequestPermissionsResult(request.requestCode, request.requestedPermissions,
+                IntArray(request.requestedPermissions.size) { PackageManager.PERMISSION_GRANTED })
+            assertEquals(activity.getString(R.string.check_permission_ready), check.text.toString())
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.allow_permission).visibility)
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.setup_card).visibility)
+            assertNull(shadowOf(application).nextStartedService)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun blockedLocationPermissionOffersAppSettings() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val allow = activity.findViewById<Button>(R.id.allow_permission)
+            allow.performClick()
+            val request = shadowOf(activity).lastRequestedPermission
+            activity.onRequestPermissionsResult(request.requestCode, request.requestedPermissions,
+                IntArray(request.requestedPermissions.size) { PackageManager.PERMISSION_DENIED })
+            assertEquals(activity.getString(R.string.app_settings), allow.text.toString())
+            assertEquals(activity.getString(R.string.location_permission_blocked),
+                activity.findViewById<TextView>(R.id.error).text.toString())
+            allow.performClick()
+            val settings = shadowOf(activity).nextStartedActivity
+            assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, settings.action)
+            assertEquals("package:${activity.packageName}", settings.data.toString())
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    private fun place(name: String, latitude: Double, longitude: Double) = Address(Locale.ENGLISH).apply {
+        this.latitude = latitude
+        this.longitude = longitude
+        setAddressLine(0, name)
     }
 }
