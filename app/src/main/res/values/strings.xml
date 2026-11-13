@@ -10,9 +10,6 @@
     <string name="apply">Apply</string>
     <string name="stop">Stop</string>
     <string name="save_pin">Save pin</string>
-    <string name="idle">Standby</string>
-    <string name="active">Active</string>
-    <string name="active_coordinates">Spoofing %1$s\nGPS + network · 1 s refresh · 10 m accuracy</string>
     <string name="developer_options">Open</string>
     <string name="developer_options_desc">Open Developer options</string>
     <string name="location_settings">Turn on</string>
@@ -79,8 +76,8 @@
     <string name="copy_coordinates">Copy coordinates</string>
     <string name="coordinates_copied">Coordinates copied</string>
     <string name="draft_idle">Preview · tap Start to spoof</string>
-    <string name="draft_active">Preview · tap Apply to move the session</string>
-    <string name="draft_live">Live location · no Apply needed</string>
+    <string name="draft_active">Spoofing · tap Apply to use this preview</string>
+    <string name="draft_live">Spoofing · live location · no Apply needed</string>
     <string name="pin_loaded">Loaded %1$s</string>
     <string name="pin_actions">Actions for %1$s</string>
     <string name="rename_pin">Rename pin</string>

@@ -151,6 +151,45 @@ class MainActivityTest {
     }
 
     @Test
+    fun bottomStatusTracksSessionAndDraftChangesWithoutTopBanners() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val hint = activity.findViewById<TextView>(R.id.draft_hint)
+            val stop = activity.findViewById<Button>(R.id.stop)
+            val appBar = activity.findViewById<LinearLayout>(R.id.app_bar)
+            assertEquals(listOf(activity.getString(R.string.app_name)),
+                (0 until appBar.childCount).map { appBar.getChildAt(it) }
+                    .filterIsInstance<TextView>().map { it.text.toString() })
+            assertEquals(activity.getString(R.string.draft_idle), hint.text.toString())
+            assertEquals(View.GONE, stop.visibility)
+            val serviceController = Robolectric.buildService(MockLocationService::class.java).create()
+            try {
+                val service = serviceController.get()
+                service.onStartCommand(Intent(service, MockLocationService::class.java).apply {
+                    putExtra(MockLocationService.LATITUDE, "12.5")
+                    putExtra(MockLocationService.LONGITUDE, "45.25")
+                }, 0, 1)
+                activity.findViewById<EditText>(R.id.latitude).setText("12.5")
+                activity.findViewById<EditText>(R.id.longitude).setText("45.25")
+                assertEquals(activity.getString(R.string.draft_live), hint.text.toString())
+                assertEquals(View.VISIBLE, stop.visibility)
+                assertTrue(hint.isShown)
+                assertTrue(activity.findViewById<View>(R.id.action_bar).isShown)
+                activity.findViewById<EditText>(R.id.latitude).setText("13.5")
+                assertEquals(activity.getString(R.string.draft_active), hint.text.toString())
+                assertTrue(activity.findViewById<Button>(R.id.start).isEnabled)
+            } finally {
+                serviceController.destroy()
+            }
+            assertEquals(activity.getString(R.string.draft_idle), hint.text.toString())
+            assertEquals(View.GONE, stop.visibility)
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
     fun offlineHidesOnlineContentAndRetainsDraftPinsAdjustmentsAndTheActiveSession() {
         val serviceController = Robolectric.buildService(MockLocationService::class.java).create()
         val service = serviceController.get()

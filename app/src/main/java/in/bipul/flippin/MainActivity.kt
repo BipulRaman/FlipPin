@@ -624,19 +624,6 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private fun renderState() {
         val running = sessionRunning()
         if (!running) liveSent = null
-        findViewById<TextView>(R.id.status).apply {
-            setText(if (running) R.string.active else R.string.idle)
-            isActivated = running
-            setTextColor(getColor(if (running) R.color.success else R.color.muted))
-        }
-        val point = Coordinates.parse(
-            state.getString(MockLocationService.LATITUDE, "").orEmpty(),
-            state.getString(MockLocationService.LONGITUDE, "").orEmpty()
-        )
-        findViewById<TextView>(R.id.status_detail).apply {
-            text = point?.takeIf { running }?.let { getString(R.string.active_coordinates, it.display()) }
-            visibility = if (running && point != null) View.VISIBLE else View.GONE
-        }
         findViewById<Button>(R.id.stop).apply {
             isEnabled = running
             visibility = if (running) View.VISIBLE else View.GONE

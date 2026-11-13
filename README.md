@@ -23,8 +23,8 @@ root the device, bypass app protections, or change IP/cellular location.
   **Manage** to load, rename, or delete.
 - Foreground notification with a Stop action; the session continues when the screen is off
   or you switch apps, subject to Android/OEM process and battery restrictions.
-- Compact, map-first light/dark layout: a status chip in the top bar, a sticky bottom bar
-  with the preview coordinates, Save/Copy and Start/Apply/Stop, side-by-side coordinate fields,
+- Compact, map-first light/dark layout: spoofing status appears only in the sticky bottom bar,
+  alongside preview coordinates, Save/Copy and Start/Apply/Stop, side-by-side coordinate fields,
   and a setup checklist that only appears until the device is ready. Privacy details and usage
   limitations are in **About & privacy** (ⓘ). Accessible labels, keyboard adjustments, and
   system/keyboard insets are supported.
