@@ -60,11 +60,11 @@ jobs:
             echo "::error::Set repository secret DEBUG_KEYSTORE_BASE64 first. See README.md."
             exit 1
           fi
-          KEYSTORE="${RUNNER_TEMP}/flippin.keystore"
+          KEYSTORE="${RUNNER_TEMP}/gps-emulator.keystore"
           printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           test -s "$KEYSTORE"
           keytool -list -keystore "$KEYSTORE" -storepass android -alias androiddebugkey > /dev/null
-          echo "FLIPPIN_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "GPS_EMULATOR_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
 
       - name: Test, lint and build release APK
         env:
@@ -80,22 +80,22 @@ jobs:
         env:
           VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
-          SRC="build/outputs/apk/release/FlipPin-release.apk"
+          SRC="build/outputs/apk/release/GpsEmulator-release.apk"
           test -s "$SRC"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           test -n "$APKSIGNER"
           SIGNERS=$("$APKSIGNER" verify --print-certs "$SRC")
           APK_CERTS=$(printf '%s\n' "$SIGNERS" | grep 'certificate SHA-256 digest:' | awk '{print $NF}' | sort -u)
-          KEYSTORE_CERT=$(keytool -exportcert -keystore "$FLIPPIN_KEYSTORE" \
+          KEYSTORE_CERT=$(keytool -exportcert -keystore "$GPS_EMULATOR_KEYSTORE" \
             -storepass android -alias androiddebugkey | sha256sum | cut -d' ' -f1)
           if [ "$APK_CERTS" != "$KEYSTORE_CERT" ]; then
             echo "::error::APK signer does not match the permanent signing keystore."
             exit 1
           fi
           mkdir -p dist
-          APK="dist/FlipPin-${VERSION_NAME}.apk"
+          APK="dist/GpsEmulator-${VERSION_NAME}.apk"
           cp "$SRC" "$APK"
-          (cd dist && sha256sum "FlipPin-${VERSION_NAME}.apk" > "FlipPin-${VERSION_NAME}.apk.sha256")
+          (cd dist && sha256sum "GpsEmulator-${VERSION_NAME}.apk" > "GpsEmulator-${VERSION_NAME}.apk.sha256")
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Attach APK and checksum to published release
@@ -107,4 +107,4 @@ jobs:
 
       - name: Remove signing keystore from runner
         if: always()
-        run: rm -f "${RUNNER_TEMP}/flippin.keystore"
+        run: rm -f "${RUNNER_TEMP}/gps-emulator.keystore"

@@ -14,4 +14,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "FlipPin"
+rootProject.name = "GpsEmulator"

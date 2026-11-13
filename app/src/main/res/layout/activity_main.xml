@@ -101,7 +101,7 @@
 
                 <FrameLayout android:id="@+id/online_map" android:layout_width="match_parent"
                     android:layout_height="280dp" android:layout_marginTop="8dp" android:visibility="gone">
-                    <in.bipul.flippin.CoordinateMapView android:id="@+id/coordinate_pad"
+                    <in.bipul.gpsemulator.CoordinateMapView android:id="@+id/coordinate_pad"
                         android:layout_width="match_parent" android:layout_height="match_parent" />
                     <TextView android:id="@+id/map_limit" android:layout_width="match_parent"
                         android:layout_height="wrap_content" android:layout_gravity="top"
@@ -165,7 +165,7 @@
                             android:textSize="12sp" android:lineSpacingExtra="1dp"
                             android:text="@string/move_hint_preview" />
                     </LinearLayout>
-                    <in.bipul.flippin.JoystickView android:id="@+id/joystick"
+                    <in.bipul.gpsemulator.JoystickView android:id="@+id/joystick"
                         android:layout_width="128dp" android:layout_height="128dp"
                         android:layout_marginStart="14dp"
                         android:contentDescription="@string/joystick_description" />

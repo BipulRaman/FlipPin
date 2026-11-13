@@ -1,11 +1,16 @@
-# GPS Swap
+# GPS Emulator
+
+> [!WARNING]
+> **Strictly for authorized use only.** GPS Emulator is a developer and security-testing
+> tool. Use it only on devices and applications you own or have explicit permission to
+> test. Do not use it to deceive others, evade restrictions, or perform unauthorized activities.
 
 A small native Android app for **authorized GPS mock-location testing**.
 Search for a destination, choose a point on the interactive map, or enter latitude and longitude,
 save frequently used pins, and simulate a fixed location (or move it with a 360° joystick)
 with a visible foreground session and a Stop action.
 
-Android explicitly marks the locations as mocked. GPS Swap does not hide that flag,
+Android explicitly marks the locations as mocked. GPS Emulator does not hide that flag,
 root the device, bypass app protections, or change IP/cellular location.
 
 ## Features
@@ -40,12 +45,12 @@ Requires **Android 8.0 or newer**. No root is needed.
 
 1. Enable **Developer options**: in Settings, find About phone / Software information
    and tap **Build number** seven times. OEM menus vary.
-2. Open **Developer options → Select mock location app → GPS Swap**.
+2. Open **Developer options → Select mock location app → GPS Emulator**.
 3. Enable the device's **Location** setting.
-4. Choose coordinates in GPS Swap and tap **Start spoofing**. Allow the location permission
+4. Choose coordinates in GPS Emulator and tap **Start spoofing**. Allow the location permission
    required by Android's location foreground-service rules. Approximate permission is sufficient;
-   GPS Swap does not read your real location.
-5. Allow notifications to keep the Stop action visible. If denied, stop through GPS Swap
+   GPS Emulator does not read your real location.
+5. Allow notifications to keep the Stop action visible. If denied, stop through GPS Emulator
    or Android's Active apps controls.
 6. To end a session, use **Stop** in the app or notification. The test providers
    are removed so Android can return to normal location fixes.
@@ -79,7 +84,7 @@ Before a session starts, the joystick moves the preview pin. During a session ev
 drag or step moves the **live** location directly, with no Apply needed, starting from wherever the
 session is: fixes keep their 1-second cadence and report the joystick's speed and bearing,
 the status shows the current position, and releasing stops in place. While the preview matches
-the live location, the bottom bar says so and Apply stays disabled. If GPS Swap stops sending
+the live location, the bottom bar says so and Apply stays disabled. If GPS Emulator stops sending
 joystick updates (for example, the app is closed mid-drag), the session halts within 2 seconds.
 Typing, dragging the pin, searching/selecting a result, or loading a saved pin only changes the
 preview, even during an active session: tap **Apply** explicitly to move the injected location there.
@@ -96,7 +101,7 @@ transliterated names (`name:latin`); local-script-only labels are omitted rather
 than silently switching languages. Road numbers are retained. The map data does
 not contain an English translation for every street or business.
 The map provider receives your IP address and requested map areas;
-GPS Swap does not read or upload your device's real location or saved-pin names.
+GPS Emulator does not read or upload your device's real location or saved-pin names.
 Transparent 9sp attribution links to [OpenStreetMap's licence](https://www.openstreetmap.org/copyright),
 [OpenMapTiles](https://openmaptiles.org/), and [OpenFreeMap](https://openfreemap.org/).
 WebView manages its normal private HTTP cache; there is no bulk download,
@@ -116,11 +121,11 @@ remain stuck, deselect the mock-location app in Developer options and toggle Loc
 
 ## Project and local builds
 
-The layout follows `D:\GitHub\EbookReader`: the **entire single-module Gradle project
-is inside `app/`**, with only repository metadata and GitHub Actions outside it.
+The **entire single-module Gradle project is inside `app/`**, with only repository
+metadata and GitHub Actions outside it.
 
 ```text
-FlipPin/
+GpsEmulator/
   .github/
     workflows/build-and-release.yml
     scripts/release_version.py
@@ -129,9 +134,9 @@ FlipPin/
     build.gradle.kts, settings.gradle.kts, gradle.properties
     gradlew, gradlew.bat, gradle/wrapper/
     src/main/AndroidManifest.xml
-    src/main/java/in/bipul/flippin/
+    src/main/java/in/bipul/gpsemulator/
     src/main/res/
-    src/test/java/in/bipul/flippin/
+    src/test/java/in/bipul/gpsemulator/
 ```
 
 Stack: **Kotlin + Android Views + Android WebView + MapLibre GL JS 6.16.0** (BSD-3-Clause), minSdk 26 /
@@ -154,13 +159,13 @@ Run the map-label regression tests from the repository root with Node.js 22+:
 `node --test app\src\test\js\labels.test.mjs`.
 
 `installDebug` requires a connected device/emulator. Local release builds use the local
-debug signing key unless `FLIPPIN_KEYSTORE` is configured:
+debug signing key unless `GPS_EMULATOR_KEYSTORE` is configured:
 
 ```powershell
-.\gradlew.bat assembleRelease '-PversionName=1.0.0' '-PversionCode=10000'
+.\gradlew.bat assembleRelease '-PversionName=2.3.4' '-PversionCode=20304'
 ```
 
-Output: `app\build\outputs\apk\release\FlipPin-release.apk`. Local debug-signed builds
+Output: `app\build\outputs\apk\release\GpsEmulator-release.apk`. Local debug-signed builds
 cannot update installs signed with your permanent release key.
 
 ## Release-only APK pipeline
@@ -169,38 +174,40 @@ cannot update installs signed with your permanent release key.
 Release is published**, including a published prerelease with a valid plain version tag.
 It does not run on pushes, pull requests, tag pushes alone, draft releases, or manual dispatch.
 
-Publish a release with a tag such as **`1.0.0`**, **`1.0.1`**, or **`1.2.3`**.
+Publish a release with a plain **`major.minor.patch`** tag, for example **`2.3.4`**.
 No `v` prefix, leading zeros, or prerelease/build suffixes are accepted. Minor and patch
 numbers must be below 100; the derived Android code must be positive and at most 2100000000.
 
 - `versionName = tag`
-- `versionCode = major * 10000 + minor * 100 + patch` (`1.0.0` becomes `10000`)
+- `versionCode = major * 10000 + minor * 100 + patch` (`2.3.4` becomes `20304`)
 
 The workflow validates the tag, runs tests and Android Lint, builds a minified release APK,
 verifies its signing certificate against the permanent keystore, and uploads
-**`FlipPin-1.0.0.apk`** plus **`FlipPin-1.0.0.apk.sha256`** to that same release.
+**`GpsEmulator-<version>.apk`** plus **`GpsEmulator-<version>.apk.sha256`** to that same release.
 Install the APK from the release assets, allowing installation from that source in Android.
-Higher versions signed with the same key update existing installations and preserve saved pins.
+Higher versions with the same application ID and signing key update existing installations
+and preserve saved pins.
 
 ### One-time permanent signing-key setup
 
-Like EbookReader, CI uses the repository secret **`DEBUG_KEYSTORE_BASE64`** with alias
-`androiddebugkey` and Android's default keystore/key passwords (`android`). Generate a
-**separate permanent key for FlipPin** and keep a secure private backup.
+CI uses the repository secret **`DEBUG_KEYSTORE_BASE64`** with alias `androiddebugkey`
+and Android's default keystore/key passwords (`android`). Keep a secure private backup
+of the **permanent GPS Emulator signing key**. If the secret is already configured, keep
+that exact key; do not generate or upload a replacement.
 
-Unlike the reference's setup workflow, this procedure **never prints private signing-key
-material into public GitHub Actions logs**. Generate it locally with JDK `keytool` and
-send the base64 directly to GitHub's encrypted repository secret:
+For an initial setup without a signing key, generate it locally with JDK `keytool` and
+send the base64 directly to GitHub's encrypted repository secret. Run from the repository
+checkout; this procedure **never prints private signing-key material into public logs**:
 
 ```powershell
-$keystore = Join-Path $env:TEMP "flippin-signing.keystore"
+$keystore = Join-Path $env:TEMP "gps-emulator-signing.keystore"
 if (Test-Path $keystore) { throw "Keystore already exists; do not replace your signing key." }
 keytool -genkeypair -noprompt -keystore $keystore -storetype JKS `
   -storepass android -keypass android -alias androiddebugkey `
-  -keyalg RSA -keysize 3072 -validity 36500 -dname "CN=FlipPin,O=FlipPin,C=US"
+  -keyalg RSA -keysize 3072 -validity 36500 -dname "CN=GpsEmulator,O=GpsEmulator,C=US"
 if ($LASTEXITCODE -ne 0) { throw "Key generation failed." }
 [Convert]::ToBase64String([IO.File]::ReadAllBytes($keystore)) |
-  gh secret set DEBUG_KEYSTORE_BASE64 --repo BipulRaman/FlipPin
+  gh secret set DEBUG_KEYSTORE_BASE64
 if ($LASTEXITCODE -ne 0) { throw "Secret upload failed; keep the generated key and retry upload." }
 ```
 
@@ -209,9 +216,6 @@ print it, or replace the secret after distributing APKs: changing keys breaks in
 The default password is not the security boundary; protect the private keystore and repository
 access. The pipeline fails rather than shipping with a fallback key when the secret is missing.
 
-Local signing overrides: `FLIPPIN_KEYSTORE`, `FLIPPIN_KEYSTORE_PASSWORD`,
-`FLIPPIN_KEY_ALIAS`, and `FLIPPIN_KEY_PASSWORD`. CI expects the alias and passwords above.
-The application ID is `com.app0123456789.gps`; keep it unchanged for future upgrades.
-This installs separately from versions 1.0.3 and earlier (`in.bipul.flippin`), so their
-saved pins and permissions do not transfer. Select the new installation as the mock
-location app in Developer options before starting a session.
+Local signing overrides: `GPS_EMULATOR_KEYSTORE`, `GPS_EMULATOR_KEYSTORE_PASSWORD`,
+`GPS_EMULATOR_KEY_ALIAS`, and `GPS_EMULATOR_KEY_PASSWORD`. CI expects the alias and passwords above.
+The application ID is `in.bipul.gpsemulator`; keep it unchanged for future upgrades.

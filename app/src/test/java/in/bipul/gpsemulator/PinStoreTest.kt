@@ -1,4 +1,4 @@
-package `in`.bipul.flippin
+package `in`.bipul.gpsemulator
 
 import android.content.Context
 import org.junit.Assert.assertEquals

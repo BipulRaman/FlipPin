@@ -1,4 +1,4 @@
-package `in`.bipul.flippin
+package `in`.bipul.gpsemulator
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -54,7 +54,7 @@ class CoordinateMapView @JvmOverloads constructor(
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.setSupportMultipleWindows(false)
         settings.javaScriptCanOpenWindowsAutomatically = false
-        addJavascriptInterface(MapBridge(), "FlipPin")
+        addJavascriptInterface(MapBridge(), "GpsEmulator")
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
 
@@ -161,7 +161,7 @@ class CoordinateMapView @JvmOverloads constructor(
             state.put("camera", JSONObject().put("latitude", cameraLatitude)
                 .put("longitude", cameraLongitude).put("zoom", zoom))
         }
-        webView?.evaluateJavascript("window.FlipPinMap.setState($state)", null)
+        webView?.evaluateJavascript("window.GpsEmulatorMap.setState($state)", null)
     }
 
     internal inner class MapBridge {
@@ -236,7 +236,7 @@ class CoordinateMapView @JvmOverloads constructor(
     private fun disposeWebView() {
         webView?.let {
             removeView(it)
-            it.removeJavascriptInterface("FlipPin")
+            it.removeJavascriptInterface("GpsEmulator")
             it.stopLoading()
             it.destroy()
         }

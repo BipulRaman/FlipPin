@@ -1,4 +1,4 @@
-package `in`.bipul.flippin
+package `in`.bipul.gpsemulator
 
 import android.app.AppOpsManager
 import android.provider.Settings
@@ -93,7 +93,7 @@ class MainActivityTest {
         val script = shadow.lastEvaluatedJavascript
         val revision = script?.let { JSONObject(it.substringAfter("setState(").dropLast(1)).getInt("revision") } ?: 0
         data.put("generation", generation).put("type", type).put("revision", revision)
-        (shadow.getJavascriptInterface("FlipPin") as CoordinateMapView.MapBridge).postMessage(data.toString())
+        (shadow.getJavascriptInterface("GpsEmulator") as CoordinateMapView.MapBridge).postMessage(data.toString())
         shadowOf(Looper.getMainLooper()).idle()
     }
 
@@ -290,7 +290,7 @@ class MainActivityTest {
             activity.findViewById<EditText>(R.id.latitude).setText("10.123456789")
             activity.findViewById<EditText>(R.id.longitude).setText("20.987654321")
             val shadow = shadowOf(requireNotNull(pad.webView))
-            val bridge = shadow.getJavascriptInterface("FlipPin") as CoordinateMapView.MapBridge
+            val bridge = shadow.getJavascriptInterface("GpsEmulator") as CoordinateMapView.MapBridge
             bridge.postMessage(JSONObject().put("generation", Uri.parse(shadow.lastLoadedUrl)
                 .getQueryParameter("generation")!!.toInt()).put("revision", staleRevision)
                 .put("type", "pick").put("latitude", 5).put("longitude", 6).toString())

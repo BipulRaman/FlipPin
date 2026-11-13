@@ -1,4 +1,4 @@
-package `in`.bipul.flippin
+package `in`.bipul.gpsemulator
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -12,7 +12,6 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.location.Geocoder
@@ -46,7 +45,6 @@ import android.widget.AdapterView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListPopupWindow
 import android.widget.ScrollView

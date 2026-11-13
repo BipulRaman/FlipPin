@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">GPS Swap</string>
+    <string name="app_name">GPS Emulator</string>
     <string name="intro">Choose a real-world destination for controlled location testing.</string>
     <string name="latitude">Latitude</string>
     <string name="latitude_hint">-90 to 90</string>
@@ -17,9 +17,9 @@
     <string name="allow_permission">Allow</string>
     <string name="app_settings">App settings</string>
     <string name="mock_hint">Can’t find Developer options? Tap Build number seven times in Settings → About phone.</string>
-    <string name="permission_hint">Android requires this to run the location service (notifications show the Stop control). GPS Swap never reads your real location.</string>
+    <string name="permission_hint">Android requires this to run the location service (notifications show the Stop control). GPS Emulator never reads your real location.</string>
     <string name="setup_complete">Setup complete. You’re ready to start.</string>
-    <string name="mock_not_ready">Select GPS Swap as the mock location app before starting.</string>
+    <string name="mock_not_ready">Select GPS Emulator as the mock location app before starting.</string>
     <string name="location_off">The device Location setting is off.</string>
     <string name="saved_pins">Saved pins</string>
     <string name="no_pins">No saved pins yet. Tap the bookmark below to save one.</string>
@@ -84,8 +84,8 @@
     <string name="setup_progress">Setup: %1$d of 3 ready</string>
     <string name="setup_expand">Show</string>
     <string name="setup_collapse">Hide</string>
-    <string name="check_mock_ready">✓ GPS Swap is the mock location app</string>
-    <string name="check_mock_needed">1. Select GPS Swap as the mock location app</string>
+    <string name="check_mock_ready">✓ GPS Emulator is the mock location app</string>
+    <string name="check_mock_needed">1. Select GPS Emulator as the mock location app</string>
     <string name="check_location_ready">✓ Device Location is on</string>
     <string name="check_location_needed">2. Turn on device Location</string>
     <string name="check_permission_ready">✓ Location permission allowed</string>
@@ -95,19 +95,19 @@
     <string name="invalid_longitude">Enter a finite longitude from -180 to 180.</string>
     <string name="location_permission_required">Allow location permission so Android can run the location foreground service.</string>
     <string name="location_permission_blocked">Location permission is blocked. Tap App settings, then Permissions → Location → Allow.</string>
-    <string name="notifications_disabled">Notifications are disabled. Use GPS Swap or Android’s Active apps controls to stop the session.</string>
+    <string name="notifications_disabled">Notifications are disabled. Use GPS Emulator or Android’s Active apps controls to stop the session.</string>
     <string name="settings_unavailable">This settings screen is unavailable. Open Android Settings manually.</string>
     <string name="start_failed">Could not start spoofing: %1$s</string>
-    <string name="mock_permission_revoked">Mock-location access was denied. Select GPS Swap in Developer options and try again.</string>
+    <string name="mock_permission_revoked">Mock-location access was denied. Select GPS Emulator in Developer options and try again.</string>
     <string name="provider_failed">The device rejected the mock provider: %1$s</string>
     <string name="cleanup_failed">Could not remove a mock provider: %1$s. Disable mock locations in Developer options if your location stays fixed.</string>
     <string name="invalid_request">The requested coordinates are missing or invalid.</string>
     <string name="notification_channel">Mock location session</string>
-    <string name="notification_title">GPS Swap is spoofing your location</string>
+    <string name="notification_title">GPS Emulator is spoofing your location</string>
     <string name="notification_text">%1$s · Tap to open, or stop below.</string>
     <string name="limitations_title">For authorized testing</string>
     <string name="limitations">Use only on devices and applications you are authorized to test. Android marks these fixes as mock locations; apps may detect or ignore them. This does not change your IP address, cellular location, or bypass anti-spoofing checks. Some fused-location apps and OEM devices may not use these providers.</string>
-    <string name="version">GPS Swap %1$s · About &amp; privacy</string>
+    <string name="version">GPS Emulator %1$s · About &amp; privacy</string>
     <string name="about_title">About &amp; privacy</string>
     <string name="setup_open">Device setup</string>
     <string name="close">Close</string>

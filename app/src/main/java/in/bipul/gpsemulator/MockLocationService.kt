@@ -1,4 +1,4 @@
-package `in`.bipul.flippin
+package `in`.bipul.gpsemulator
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -210,7 +210,7 @@ class MockLocationService : Service() {
         const val LATITUDE = "latitude"
         const val LONGITUDE = "longitude"
         const val ERROR = "error"
-        const val ACTION_MOVE = "in.bipul.flippin.MOVE"
+        const val ACTION_MOVE = "in.bipul.gpsemulator.MOVE"
         /** Joystick ground speed in metres per second. */
         const val SPEED = "speed"
         /** Joystick heading in degrees clockwise from true north. */
@@ -219,7 +219,7 @@ class MockLocationService : Service() {
         const val MOVE_TIMEOUT_MS = 2_000L
         private const val MAX_SPEED = 100.0 / 3.6
         private const val TAG = "MockLocationService"
-        private const val ACTION_STOP = "in.bipul.flippin.STOP"
+        private const val ACTION_STOP = "in.bipul.gpsemulator.STOP"
         private const val CHANNEL = "mock_location"
         private const val NOTIFICATION = 1
     }

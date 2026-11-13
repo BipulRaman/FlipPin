@@ -1,4 +1,4 @@
-package `in`.bipul.flippin
+package `in`.bipul.gpsemulator
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

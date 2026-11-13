@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "in.bipul.flippin"
+    namespace = "in.bipul.gpsemulator"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.app0123456789.gps"
+        applicationId = "in.bipul.gpsemulator"
         minSdk = 26
         targetSdk = 37
         versionCode = providers.gradleProperty("versionCode").map(String::toInt).getOrElse(1)
@@ -16,12 +16,12 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystore = providers.environmentVariable("FLIPPIN_KEYSTORE").orNull
+            val keystore = providers.environmentVariable("GPS_EMULATOR_KEYSTORE").orNull
             if (keystore != null) {
                 storeFile = file(keystore)
-                storePassword = providers.environmentVariable("FLIPPIN_KEYSTORE_PASSWORD").getOrElse("android")
-                keyAlias = providers.environmentVariable("FLIPPIN_KEY_ALIAS").getOrElse("androiddebugkey")
-                keyPassword = providers.environmentVariable("FLIPPIN_KEY_PASSWORD").getOrElse("android")
+                storePassword = providers.environmentVariable("GPS_EMULATOR_KEYSTORE_PASSWORD").getOrElse("android")
+                keyAlias = providers.environmentVariable("GPS_EMULATOR_KEY_ALIAS").getOrElse("androiddebugkey")
+                keyPassword = providers.environmentVariable("GPS_EMULATOR_KEY_PASSWORD").getOrElse("android")
             } else {
                 initWith(getByName("debug"))
             }

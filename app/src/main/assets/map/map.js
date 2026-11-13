@@ -7,7 +7,7 @@ let syncing = false;
 let failed = false;
 
 function notify(type, data = {}) {
-  window.FlipPin.postMessage(JSON.stringify({ type, generation, revision, ...data }));
+  window.GpsEmulator.postMessage(JSON.stringify({ type, generation, revision, ...data }));
 }
 
 function fail(error) {
@@ -67,7 +67,7 @@ try {
   });
   map.getCanvas().addEventListener("webglcontextlost", () => fail("WebGL context lost."));
 
-  window.FlipPinMap = {
+  window.GpsEmulatorMap = {
     setState(state) {
       revision = state.revision;
       syncing = true;

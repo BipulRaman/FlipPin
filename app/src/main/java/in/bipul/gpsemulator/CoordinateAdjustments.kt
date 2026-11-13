@@ -1,4 +1,4 @@
-package `in`.bipul.flippin
+package `in`.bipul.gpsemulator
 
 import java.math.BigDecimal
 import java.math.RoundingMode
