@@ -43,7 +43,7 @@ class MockLocationEngine(private val manager: LocationManager) {
         }
     }
 
-    fun publish(coordinates: Coordinates) {
+    fun publish(coordinates: Coordinates, speed: Float = 0f, bearing: Float = 0f) {
         check(installed.isNotEmpty()) { "Mock providers have not been started" }
         for (provider in installed) {
             manager.setTestProviderLocation(provider, Location(provider).apply {
@@ -51,8 +51,8 @@ class MockLocationEngine(private val manager: LocationManager) {
                 longitude = coordinates.longitude
                 accuracy = 10f
                 altitude = 0.0
-                speed = 0f
-                bearing = 0f
+                this.speed = speed
+                this.bearing = bearing
                 time = System.currentTimeMillis()
                 elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
             })

@@ -88,6 +88,12 @@
                         android:inputType="textCapWords" android:imeOptions="actionSearch"
                         android:hint="@string/search_hint" android:saveEnabled="true" android:maxLength="200"
                         android:selectAllOnFocus="false" android:importantForAutofill="no" />
+                    <ImageButton android:id="@+id/clear_query" android:layout_width="48dp"
+                        android:layout_height="match_parent" android:visibility="gone"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_close" android:tint="@color/muted"
+                        android:contentDescription="@string/clear_search"
+                        android:tooltipText="@string/clear_search" />
                     <View android:layout_width="1dp" android:layout_height="24dp"
                         android:background="@color/hint" android:importantForAccessibility="no" />
                     <ImageButton android:id="@+id/search_location" android:layout_width="48dp"
@@ -153,23 +159,19 @@
                     </LinearLayout>
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp" android:orientation="horizontal">
-                    <Button android:id="@+id/pace_walk" style="@style/SegmentButton" android:text="@string/pace_walk" />
-                    <Button android:id="@+id/pace_run" style="@style/SegmentButton"
-                        android:layout_marginStart="4dp" android:text="@string/pace_run" />
-                    <Button android:id="@+id/pace_drive" style="@style/SegmentButton"
-                        android:layout_marginStart="4dp" android:text="@string/pace_drive" />
-                </LinearLayout>
-                <TextView android:id="@+id/nudge_step" style="@style/FieldLabel" android:layout_marginTop="8dp" />
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp" android:orientation="horizontal">
-                    <Button android:id="@+id/nudge_north" style="@style/NudgeButton" android:text="@string/nudge_north" />
-                    <Button android:id="@+id/nudge_south" style="@style/NudgeButton" android:layout_marginStart="4dp"
-                        android:text="@string/nudge_south" />
-                    <Button android:id="@+id/nudge_west" style="@style/NudgeButton" android:layout_marginStart="4dp"
-                        android:text="@string/nudge_west" />
-                    <Button android:id="@+id/nudge_east" style="@style/NudgeButton" android:layout_marginStart="4dp"
-                        android:text="@string/nudge_east" />
+                    android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
+                    <in.bipul.flippin.JoystickView android:id="@+id/joystick"
+                        android:layout_width="128dp" android:layout_height="128dp"
+                        android:contentDescription="@string/joystick_description" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="14dp" android:orientation="vertical">
+                        <TextView android:id="@+id/move_speed" style="@style/Body" android:textColor="@color/text"
+                            android:fontFamily="sans-serif-medium" android:textSize="18sp"
+                            android:lineSpacingExtra="0dp" android:text="@string/move_stopped" />
+                        <TextView android:id="@+id/move_detail" style="@style/Body" android:layout_marginTop="2dp"
+                            android:textSize="12sp" android:lineSpacingExtra="1dp"
+                            android:text="@string/move_hint_preview" />
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
 

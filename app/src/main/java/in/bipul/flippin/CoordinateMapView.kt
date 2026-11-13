@@ -28,8 +28,6 @@ class CoordinateMapView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs) {
     var onCoordinateChanged: ((Coordinates) -> Unit)? = null
     var onTileFailureChanged: ((Boolean) -> Unit)? = null
-    var pace: Pace = Pace.WALK
-        private set
     internal var webView: WebView? = null
         private set
     private var point: Coordinates? = null
@@ -120,11 +118,6 @@ class CoordinateMapView @JvmOverloads constructor(
         if (!handlingPick) sendState(recenter && coordinates != null)
     }
 
-    fun setPace(newPace: Pace, focus: Boolean) {
-        pace = newPace
-        if (focus && point != null) zoomTo(newPace.zoom)
-    }
-
     fun zoomTo(level: Double) {
         zoom = level
         point?.let {
@@ -132,6 +125,11 @@ class CoordinateMapView @JvmOverloads constructor(
             cameraLongitude = it.longitude
         }
         sendState(moveCamera = true)
+    }
+
+    /** Zooms a far-out map to street level so joystick movement is visible; a closer zoom is kept. */
+    fun zoomForMovement() {
+        if (zoom < MOVE_MIN_ZOOM) zoomTo(MOVE_ZOOM)
     }
 
     fun retryTiles() {
@@ -280,7 +278,7 @@ class CoordinateMapView @JvmOverloads constructor(
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val current = point ?: return super.onKeyDown(keyCode, event)
-        val step = pace.meters.toDouble()
+        val step = STEP_METERS
         val selected = when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> current.moved(step, 0.0)
             KeyEvent.KEYCODE_DPAD_DOWN -> current.moved(-step, 0.0)
@@ -300,6 +298,8 @@ class CoordinateMapView @JvmOverloads constructor(
     companion object {
         const val MAP_LATITUDE_LIMIT = 85.0511287798066
         const val AREA_ZOOM = 13.0
+        private const val MOVE_MIN_ZOOM = 14.0
+        private const val MOVE_ZOOM = 16.0
         private const val TAG = "CoordinateMap"
         private const val ASSET_HOST = "appassets.androidplatform.net"
         private const val CSP = "default-src 'none'; script-src 'self'; " +

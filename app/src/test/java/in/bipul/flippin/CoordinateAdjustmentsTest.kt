@@ -3,6 +3,7 @@ package `in`.bipul.flippin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.sqrt
 
 class CoordinateAdjustmentsTest {
     @Test
@@ -40,5 +41,36 @@ class CoordinateAdjustmentsTest {
         var point = Coordinates(12.5, 179.99999)
         repeat(100) { point = point.nudged(0.00001, 0.00001) }
         assertEquals(Coordinates(12.501, -179.99901), point)
+    }
+
+    @Test
+    fun travelFollowsAnyBearingInTrueMetresWithoutRoundingAwaySmallSteps() {
+        val east = Coordinates(60.0, 10.0).travelled(90.0, 1000.0)
+        assertEquals(60.0, east.latitude, 1e-12)
+        assertEquals(10.0 + 1000 / 55_800.0, east.longitude, 1e-6)
+        // South-west splits the distance equally; 1° is 110,574 m of latitude and 111,319 m of longitude here.
+        val southWest = Coordinates(0.0, 0.0).travelled(225.0, 1000.0)
+        assertEquals(-1000 * sqrt(0.5) / 110_574.27, southWest.latitude, 1e-9)
+        assertEquals(-1000 * sqrt(0.5) / 111_319.46, southWest.longitude, 1e-9)
+        // A 4 mm joystick frame survives; seven-decimal rounding is only for display.
+        val crawl = Coordinates(0.0, 0.0).travelled(0.0, 0.004)
+        assertTrue(crawl.latitude > 0.0)
+        assertEquals(Coordinates(0.0, 0.0), crawl.rounded())
+        assertTrue(Coordinates(0.0, 179.9999).travelled(90.0, 50.0).longitude < -179.9996)
+        assertEquals(90.0, Coordinates(89.99999, 0.0).travelled(0.0, 10.0).latitude, 0.0)
+    }
+
+    @Test
+    fun joystickSpeedIgnoresTheDeadZoneAndEasesFromAWalkToTheMaximum() {
+        assertEquals(0.0, JoystickSpeed.kilometersPerHour(0.0), 0.0)
+        assertEquals(0.0, JoystickSpeed.kilometersPerHour(JoystickSpeed.DEAD_ZONE), 0.0)
+        assertEquals(0.0, JoystickSpeed.kilometersPerHour(Double.NaN), 0.0)
+        assertTrue(JoystickSpeed.kilometersPerHour(0.37) in 3.0..7.0)
+        assertTrue(JoystickSpeed.kilometersPerHour(0.5) in 8.0..16.0)
+        assertTrue(JoystickSpeed.kilometersPerHour(0.75) in 30.0..60.0)
+        assertEquals(100.0, JoystickSpeed.kilometersPerHour(1.0), 1e-9)
+        assertEquals(100.0, JoystickSpeed.kilometersPerHour(2.0), 1e-9)
+        val sweep = (13..100).map { JoystickSpeed.kilometersPerHour(it / 100.0) }
+        assertTrue(sweep.zipWithNext().all { (slower, faster) -> faster > slower })
     }
 }

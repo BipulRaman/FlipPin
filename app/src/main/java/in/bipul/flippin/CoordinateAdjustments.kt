@@ -3,25 +3,49 @@ package `in`.bipul.flippin
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
 
-/** Directional-nudge distance per tap, about 3.6 s of travel at a typical speed for each pace. */
-enum class Pace(val meters: Int, val kilometersPerHour: Int, val zoom: Double) {
-    WALK(5, 5, 18.0),
-    RUN(10, 10, 17.0),
-    DRIVE(50, 50, 15.0);
+/** Distance of one keyboard or accessibility movement step: a few walking paces. */
+const val STEP_METERS = 5.0
 
-    val secondsPerTap: Double get() = meters * 3.6 / kilometersPerHour
+/** Joystick ground speed: none inside a small dead zone, then an ease-in curve up to the maximum at the edge. */
+object JoystickSpeed {
+    const val DEAD_ZONE = 0.12
+    const val MAX_KILOMETERS_PER_HOUR = 100.0
+
+    fun kilometersPerHour(deflection: Double): Double {
+        if (!(deflection > DEAD_ZONE)) return 0.0
+        val travel = ((deflection - DEAD_ZONE) / (1 - DEAD_ZONE)).coerceAtMost(1.0)
+        // The curve keeps a usable walking and running range near the centre.
+        return MAX_KILOMETERS_PER_HOUR * travel.pow(2.5)
+    }
 }
 
 fun Coordinates.moved(northMeters: Double, eastMeters: Double): Coordinates {
     require(northMeters.isFinite() && eastMeters.isFinite()) { "Movements must be finite" }
+    val (north, east) = degreeOffsets(northMeters, eastMeters)
+    return nudged(roundedDegrees(north), roundedDegrees(east))
+}
+
+/** Exact position after travelling [meters] on [bearing] degrees clockwise from true north. */
+fun Coordinates.travelled(bearing: Double, meters: Double): Coordinates {
+    require(bearing.isFinite() && meters.isFinite()) { "Movements must be finite" }
+    val radians = Math.toRadians(bearing)
+    val (north, east) = degreeOffsets(meters * cos(radians), meters * sin(radians))
+    return Coordinates((latitude + north).coerceIn(-90.0, 90.0), wrapLongitude(longitude + east))
+}
+
+fun Coordinates.rounded(): Coordinates = Coordinates(roundedDegrees(latitude), roundedDegrees(longitude))
+
+private fun Coordinates.degreeOffsets(northMeters: Double, eastMeters: Double): Pair<Double, Double> {
     val phi = Math.toRadians(latitude)
     // WGS 84 length of one degree of latitude and longitude at this latitude.
     val latitudeDegree = 111_132.92 - 559.82 * cos(2 * phi) + 1.175 * cos(4 * phi) - 0.0023 * cos(6 * phi)
     val longitudeDegree = 111_412.84 * cos(phi) - 93.5 * cos(3 * phi) + 0.118 * cos(5 * phi)
     // East and west are undefined exactly at a pole.
     val east = if (longitudeDegree > 1e-6) (eastMeters / longitudeDegree) % 360.0 else 0.0
-    return nudged(roundedDegrees(northMeters / latitudeDegree), roundedDegrees(east))
+    return northMeters / latitudeDegree to east
 }
 
 fun Coordinates.nudged(north: Double, east: Double): Coordinates {
@@ -35,6 +59,15 @@ fun Coordinates.nudged(north: Double, east: Double): Coordinates {
 // Seven decimals (about 1 cm) keep repeated movements readable in the coordinate fields.
 private fun roundedDegrees(value: Double): Double =
     BigDecimal.valueOf(value).setScale(7, RoundingMode.HALF_EVEN).toDouble()
+
+private fun wrapLongitude(value: Double): Double {
+    val remainder = value % 360.0
+    return when {
+        remainder > 180.0 -> remainder - 360.0
+        remainder < -180.0 -> remainder + 360.0
+        else -> remainder
+    }
+}
 
 private fun wrapLongitude(value: BigDecimal): Double {
     val fullTurn = BigDecimal.valueOf(360)

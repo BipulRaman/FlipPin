@@ -2,7 +2,7 @@
 
 A small native Android app for **authorized GPS mock-location testing**.
 Search for a destination, choose a point on the interactive map, or enter latitude and longitude,
-save frequently used pins, and simulate a fixed location
+save frequently used pins, and simulate a fixed location (or move it with a 360° joystick)
 with a visible foreground session and a Stop action.
 
 Android explicitly marks the locations as mocked. GPS Swap does not hide that flag,
@@ -12,11 +12,12 @@ root the device, bypass app protections, or change IP/cellular location.
 
 - Decimal-degree latitude/longitude validation, including negative values and decimal commas.
 - Real-world OpenStreetMap data rendered with English-first street/place labels, pan, pinch/double-tap zoom,
-  tap-to-place and long-press-to-drag pins, Walk/Run/Drive movement paces for
-  directional nudges, a live coordinate preview, and copy-to-clipboard.
+  tap-to-place and long-press-to-drag pins, a 360° movement joystick, a live coordinate preview,
+  and copy-to-clipboard.
 - Search cities, addresses, and landmarks; choose from up to five results to preview
   a destination. Tiny, linked map attribution overlays the map without a box.
-- GPS and network test providers refreshed every second with 10 m reported accuracy.
+- GPS and network test providers refreshed every second with 10 m reported accuracy, plus
+  speed and bearing while the joystick moves a session.
 - Apply different coordinates while a session is running.
 - Named saved-pin chips stored privately on the device; tap to load, long-press or use
   **Manage** to load, rename, or delete.
@@ -29,7 +30,7 @@ root the device, bypass app protections, or change IP/cellular location.
   system/keyboard insets are supported.
 - No accounts, API keys, ads, analytics, or cloud backups.
 - Offline mode hides map/search and their online-only controls and disclosures. Coordinate entry,
-  saved pins, Walk/Run/Drive nudges, copy, and Start/Apply/Stop remain available.
+  saved pins, joystick movement, copy, and Start/Apply/Stop remain available.
   Online features return automatically when Android validates the internet connection.
 - Sessions never automatically resume after reboot or process termination.
 
@@ -52,7 +53,8 @@ Requires **Android 8.0 or newer**. No root is needed.
 Start typing a city, address, or landmark in the search box: after three characters and a
 short pause, matching places appear in a dropdown under the box. Tap a suggestion to fill the
 box, move the preview pin, and zoom to the area. The magnifier at the end of the box (or the
-keyboard Search key) searches immediately and selects a single match directly. Search uses
+keyboard Search key) searches immediately and selects a single match directly. The × that
+appears while the box has text clears it for a new search; the preview pin stays put. Search uses
 Android's device-provided `Geocoder`, not the public Nominatim API. English results
 are requested regardless of the phone's language (the provider controls available translations). The device's
 geocoding provider receives what you type for suggestions; avoid sensitive information.
@@ -62,14 +64,23 @@ coordinates and map selection remain available. No extra API key is required.
 
 Pan/zoom the real-world map and tap a destination to select a six-decimal preview;
 long-press the pin to drag it. Typed and saved coordinates keep their precision.
-Directional buttons move the pin at a practical human pace: **Walk** moves 5 m per tap,
-**Run** 10 m, and **Drive** 50 m, each about 4 seconds of travel at 5, 10, or 50 km/h.
-Distances are true metres north/south/east/west at the current latitude (WGS 84), so
-longitude steps grow away from the equator. Choosing a pace also zooms the map around the
-pin (levels 18, 17, and 15); search results zoom to level 13. Longitude
-wraps at the date line; latitude stops at the poles; east/west is undefined at a pole. Typing, dragging, nudging, or
-searching/selecting a result, or loading a saved pin only changes the preview, even during an active session:
-tap **Apply** explicitly to update the injected location.
+Drag the joystick knob in any direction (360°; north is up, like the map) to move: a light push
+walks, and pushing further speeds up smoothly to 100 km/h at the edge. The readout shows the
+speed, compass heading, and pace (walking, running, cycling, or driving); releasing stops.
+Distances are true metres along the heading at the current latitude (WGS 84). The map
+follows the pin, and starting to move zooms a far-out map to street level (16); search
+results zoom to level 13. Arrow keys on the focused map or joystick, and the joystick's accessibility
+actions, move 5 m north/south/east/west. Longitude wraps at the date line; latitude stops at
+the poles; east/west is undefined at a pole.
+
+Before a session starts, the joystick moves the preview pin. During a session every joystick
+drag or step moves the **live** location directly, with no Apply needed, starting from wherever the
+session is: fixes keep their 1-second cadence and report the joystick's speed and bearing,
+the status shows the current position, and releasing stops in place. While the preview matches
+the live location, the bottom bar says so and Apply stays disabled. If GPS Swap stops sending
+joystick updates (for example, the app is closed mid-drag), the session halts within 2 seconds.
+Typing, dragging the pin, searching/selecting a result, or loading a saved pin only changes the
+preview, even during an active session: tap **Apply** explicitly to move the injected location there.
 
 Maps require internet and use [OpenFreeMap](https://openfreemap.org/quick_start/)
 vector tiles through the device's Android WebView and locally bundled MapLibre GL JS,
@@ -97,7 +108,7 @@ without silently changing their latitude, but their pin cannot be shown on the m
 
 Use only on devices and applications you are authorized to test. Apps can detect or ignore
 mock locations. Google Play services fused-location behavior and OEM implementations vary:
-not every app uses the GPS/network providers. This is fixed-point simulation, not route playback.
+not every app uses the GPS/network providers. Movement is manual (joystick); there is no route playback.
 If Android kills or force-stops the process, cleanup callbacks are not guaranteed; if fixes
 remain stuck, deselect the mock-location app in Developer options and toggle Location off/on.
 

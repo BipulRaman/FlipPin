@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Joystick accessibility actions. -->
+    <item name="move_north" type="id" />
+    <item name="move_east" type="id" />
+    <item name="move_south" type="id" />
+    <item name="move_west" type="id" />
+</resources>

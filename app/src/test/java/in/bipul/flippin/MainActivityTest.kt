@@ -18,7 +18,9 @@ import android.webkit.WebResourceRequest
 import android.os.Bundle
 import android.os.Looper
 import android.os.Process
+import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -108,6 +110,18 @@ class MainActivityTest {
         return JSONObject(script.substringAfter("setState(").dropLast(1))
     }
 
+    private fun View.touch(action: Int, x: Float, y: Float) {
+        val time = SystemClock.uptimeMillis()
+        val event = MotionEvent.obtain(time, time, action, x, y, 0)
+        dispatchTouchEvent(event)
+        event.recycle()
+    }
+
+    private fun MainActivity.preview() = Coordinates.parse(
+        findViewById<EditText>(R.id.latitude).text.toString(),
+        findViewById<EditText>(R.id.longitude).text.toString()
+    )!!
+
     @Test
     fun networkLossAndHandoverIgnoreStaleConnectivitySnapshotsAndOldNetworkEvents() {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
@@ -160,13 +174,16 @@ class MainActivityTest {
             assertEquals(activity.getString(R.string.apply), activity.findViewById<Button>(R.id.start).text.toString())
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.stop).visibility)
             activity.findViewById<LinearLayout>(R.id.pins).getChildAt(0).performClick()
-            activity.findViewById<Button>(R.id.pace_walk).performClick()
-            activity.findViewById<Button>(R.id.nudge_north).performClick()
+            assertEquals("20.0", activity.findViewById<EditText>(R.id.latitude).text.toString())
+            // The joystick still works offline; during a session it moves the live location, not the draft.
+            activity.findViewById<View>(R.id.joystick).performAccessibilityAction(R.id.move_north, null)
             val walked = activity.findViewById<EditText>(R.id.latitude).text.toString()
-            assertEquals(5.0, distanceMeters(Coordinates(20.0, 30.0), Coordinates(walked.toDouble(), 30.0)), 0.1)
-            assertEquals("30.0", activity.findViewById<EditText>(R.id.longitude).text.toString())
-            assertEquals("12.5", service.getSharedPreferences(MockLocationService.STATE, Context.MODE_PRIVATE)
-                .getString(MockLocationService.LATITUDE, null))
+            assertEquals(5.0, distanceMeters(Coordinates(12.5, 45.25), Coordinates(walked.toDouble(), 45.25)), 0.1)
+            assertEquals("45.25", activity.findViewById<EditText>(R.id.longitude).text.toString())
+            val step = shadowOf(RuntimeEnvironment.getApplication()).nextStartedService
+            assertEquals(MockLocationService.ACTION_MOVE, step.action)
+            assertEquals(walked.toDouble(), step.getStringExtra(MockLocationService.LATITUDE)!!.toDouble(), 1e-7)
+            assertEquals(0f, step.getFloatExtra(MockLocationService.SPEED, -1f), 0f)
             assertTrue(MockLocationService.isRunning)
             controller.recreate()
             activity = controller.get()
@@ -316,6 +333,8 @@ class MainActivityTest {
                 val input = activity.findViewById<EditText>(R.id.location_query)
                 val button = activity.findViewById<View>(R.id.search_location)
                 val status = activity.findViewById<TextView>(R.id.search_status)
+                val clear = activity.findViewById<View>(R.id.clear_query)
+                assertEquals(View.GONE, clear.visibility)
                 button.performClick()
                 assertNotNull(input.error)
                 for (typed in listOf("P", "Pa", "Par", "Pari")) input.setText(typed)
@@ -336,6 +355,16 @@ class MainActivityTest {
                     .getString(MockLocationService.LATITUDE, null))
                 assertTrue(MockLocationService.isRunning)
                 assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+                assertEquals(View.VISIBLE, clear.visibility)
+                assertEquals(View.VISIBLE, status.visibility)
+                clear.performClick()
+                assertEquals("", input.text.toString())
+                assertEquals(View.GONE, clear.visibility)
+                assertEquals(View.GONE, status.visibility)
+                assertTrue(input.hasFocus())
+                assertEquals("48.858412345", activity.findViewById<EditText>(R.id.latitude).text.toString())
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+                assertEquals(1, requested.size)
                 input.setText("Louvre")
                 button.performClick()
                 assertFalse(activity.suggestions.isShowing)
@@ -357,6 +386,15 @@ class MainActivityTest {
                 shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
                 assertFalse(controller.get().suggestions.isShowing)
                 assertEquals(searches, requested.size)
+                val restored = controller.get()
+                val restoredClear = restored.findViewById<View>(R.id.clear_query)
+                assertEquals(View.VISIBLE, restoredClear.visibility)
+                restored.findViewById<EditText>(R.id.location_query)
+                    .onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH)
+                assertTrue(restored.suggestions.isShowing)
+                restoredClear.performClick()
+                assertFalse(restored.suggestions.isShowing)
+                assertEquals("", restored.findViewById<EditText>(R.id.location_query).text.toString())
             } finally {
                 controller.pause().stop().destroy()
                 serviceController.destroy()
@@ -449,38 +487,62 @@ class MainActivityTest {
     }
 
     @Test
-    fun synchronizesPreviewNudgesAndKeyboardControlsAndRestoresScale() {
+    fun joystickMovesThePreviewInAnyDirectionAtTheDraggedSpeedAndArrowKeysStepFiveMetres() {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         try {
             var activity = controller.get()
             activity.findViewById<EditText>(R.id.latitude).setText("12.5")
             activity.findViewById<EditText>(R.id.longitude).setText("179.9998")
-            activity.findViewById<Button>(R.id.pace_drive).performClick()
-            assertEquals(15.0, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).camera().getDouble("map_zoom"), 0.0)
-            activity.findViewById<Button>(R.id.nudge_east).performClick()
-            activity.findViewById<Button>(R.id.nudge_east).performClick()
-            var point = Coordinates.parse(
-                activity.findViewById<EditText>(R.id.latitude).text.toString(),
-                activity.findViewById<EditText>(R.id.longitude).text.toString()
-            )!!
-            assertTrue(point.longitude < -179.99)
-            assertEquals(100.0, distanceMeters(Coordinates(12.5, 179.9998), point), 1.0)
+            val joystick = activity.findViewById<JoystickView>(R.id.joystick)
+            val centerX = joystick.width / 2f
+            val centerY = joystick.height / 2f
+            assertEquals(activity.getString(R.string.move_hint_preview),
+                activity.findViewById<TextView>(R.id.move_detail).text.toString())
+            // Pushing past the edge holds full speed: 100 km/h east, about 27.8 m per second held.
+            joystick.touch(MotionEvent.ACTION_DOWN, centerX, centerY)
+            val pushedAt = SystemClock.elapsedRealtime()
+            joystick.touch(MotionEvent.ACTION_MOVE, joystick.width + 50f, centerY)
+            assertEquals("100 km/h", activity.findViewById<TextView>(R.id.move_speed).text.toString())
+            assertEquals("E 90° · driving speed", activity.findViewById<TextView>(R.id.move_detail).text.toString())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+            val held = (SystemClock.elapsedRealtime() - pushedAt) / 1000.0
+            joystick.touch(MotionEvent.ACTION_UP, joystick.width + 50f, centerY)
+            assertEquals(16.0, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).camera().getDouble("map_zoom"), 0.0)
+            var point = activity.preview()
+            assertTrue(point.longitude < -179.9999)
+            assertEquals(12.5, point.latitude, 1e-7)
+            assertEquals(held * 100 / 3.6, distanceMeters(Coordinates(12.5, 179.9998), point), 0.2)
+            assertEquals(activity.getString(R.string.move_stopped),
+                activity.findViewById<TextView>(R.id.move_speed).text.toString())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+            assertEquals(point, activity.preview())
+            // A light push walks in any direction (here south-west).
+            joystick.touch(MotionEvent.ACTION_DOWN, centerX, centerY)
+            joystick.touch(MotionEvent.ACTION_MOVE, centerX - 9f * joystick.resources.displayMetrics.density,
+                centerY + 9f * joystick.resources.displayMetrics.density)
+            assertTrue(activity.findViewById<TextView>(R.id.move_detail).text.startsWith("SW 225° · walking pace"))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+            joystick.touch(MotionEvent.ACTION_UP, centerX, centerY)
+            val walked = activity.preview()
+            assertTrue(walked.latitude < point.latitude && walked.longitude < point.longitude)
+            assertTrue(distanceMeters(point, walked) in 0.5..2.0)
             val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
             pad.onKeyDown(KeyEvent.KEYCODE_DPAD_UP, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP))
-            val north = Coordinates.parse(
-                activity.findViewById<EditText>(R.id.latitude).text.toString(),
-                activity.findViewById<EditText>(R.id.longitude).text.toString()
-            )!!
-            assertEquals(50.0, distanceMeters(point, north), 0.5)
-            assertEquals(point.longitude, north.longitude, 0.0)
+            val north = activity.preview()
+            assertEquals(5.0, distanceMeters(walked, north), 0.1)
+            assertEquals(walked.longitude, north.longitude, 0.0)
+            joystick.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT))
+            val west = activity.preview()
+            assertEquals(5.0, distanceMeters(north, west), 0.1)
+            assertEquals(north.latitude, west.latitude, 1e-7)
+            // Holding a key steps once; auto-repeat would move faster than any real pace.
+            joystick.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, 1))
+            assertEquals(west, activity.preview())
             controller.recreate()
             activity = controller.get()
-            assertTrue(activity.findViewById<Button>(R.id.pace_drive).isSelected)
-            assertEquals(Pace.DRIVE, activity.findViewById<CoordinateMapView>(R.id.coordinate_pad).pace)
-            point = Coordinates.parse(
-                activity.findViewById<EditText>(R.id.latitude).text.toString(),
-                activity.findViewById<EditText>(R.id.longitude).text.toString()
-            )!!
+            point = activity.preview()
+            assertEquals(west, point)
             assertEquals(point.display(), activity.findViewById<TextView>(R.id.preview).text.toString())
             activity.findViewById<ImageButton>(R.id.copy_coordinates).performClick()
             assertEquals(
@@ -491,11 +553,136 @@ class MainActivityTest {
             activity.findViewById<EditText>(R.id.longitude).setText("181")
             assertFalse(activity.findViewById<ImageButton>(R.id.copy_coordinates).isEnabled)
             assertEquals(activity.getString(R.string.pad_invalid), activity.findViewById<TextView>(R.id.preview).text.toString())
-            activity.findViewById<Button>(R.id.nudge_north).performClick()
+            val restored = activity.findViewById<JoystickView>(R.id.joystick)
+            restored.touch(MotionEvent.ACTION_DOWN, centerX, centerY)
+            restored.touch(MotionEvent.ACTION_MOVE, centerX, -100f)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+            restored.touch(MotionEvent.ACTION_UP, centerX, -100f)
             assertNotNull(activity.findViewById<EditText>(R.id.longitude).error)
             assertEquals("181", activity.findViewById<EditText>(R.id.longitude).text.toString())
+            assertEquals(activity.getString(R.string.move_stopped),
+                activity.findViewById<TextView>(R.id.move_speed).text.toString())
         } finally {
             controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    fun joystickMovesTheLiveSessionWithSpeedAndHeadingAndStopsOnReleaseOrPause() {
+        val serviceController = Robolectric.buildService(MockLocationService::class.java).create()
+        val service = serviceController.get()
+        service.onStartCommand(Intent(service, MockLocationService::class.java).apply {
+            putExtra(MockLocationService.LATITUDE, "10.0")
+            putExtra(MockLocationService.LONGITUDE, "20.0")
+        }, 0, 1)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val started = shadowOf(RuntimeEnvironment.getApplication())
+            // A typed draft is not teleported to: movement starts from the live location.
+            activity.findViewById<EditText>(R.id.latitude).setText("48.0")
+            activity.findViewById<EditText>(R.id.longitude).setText("2.0")
+            assertEquals(activity.getString(R.string.move_hint_live),
+                activity.findViewById<TextView>(R.id.move_detail).text.toString())
+            val joystick = activity.findViewById<JoystickView>(R.id.joystick)
+            val centerX = joystick.width / 2f
+            joystick.touch(MotionEvent.ACTION_DOWN, centerX, joystick.height / 2f)
+            val pushedAt = SystemClock.elapsedRealtime()
+            joystick.touch(MotionEvent.ACTION_MOVE, centerX, -1000f)
+            val first = started.nextStartedService
+            assertEquals(MockLocationService.ACTION_MOVE, first.action)
+            assertEquals("10.0", first.getStringExtra(MockLocationService.LATITUDE))
+            assertEquals("20.0", first.getStringExtra(MockLocationService.LONGITUDE))
+            assertEquals(100 / 3.6f, first.getFloatExtra(MockLocationService.SPEED, 0f), 0.01f)
+            assertEquals(0f, first.getFloatExtra(MockLocationService.BEARING, -1f), 0f)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1200))
+            // Updates follow about every half second while the knob is held.
+            val updates = generateSequence { started.nextStartedService }.toList()
+            assertEquals(2, updates.size)
+            assertTrue(updates.all { it.getFloatExtra(MockLocationService.SPEED, 0f) > 27f })
+            val held = (SystemClock.elapsedRealtime() - pushedAt) / 1000.0
+            joystick.touch(MotionEvent.ACTION_UP, centerX, -1000f)
+            val stop = started.nextStartedService
+            assertEquals(0f, stop.getFloatExtra(MockLocationService.SPEED, -1f), 0f)
+            val stopped = Coordinates.parse(
+                stop.getStringExtra(MockLocationService.LATITUDE)!!, stop.getStringExtra(MockLocationService.LONGITUDE)!!
+            )!!
+            // The haversine check uses a sphere, about 0.5% longer than WGS 84 metres north-south here.
+            assertEquals(held * 100 / 3.6, distanceMeters(Coordinates(10.0, 20.0), stopped), 0.4)
+            assertEquals(20.0, stopped.longitude, 0.0)
+            assertEquals(stopped.rounded(), activity.preview())
+            assertNull(started.nextStartedService)
+            // The joystick already updated the session, so the bar says so and Apply is not needed.
+            val apply = activity.findViewById<Button>(R.id.start)
+            assertEquals(activity.getString(R.string.draft_live),
+                activity.findViewById<TextView>(R.id.draft_hint).text.toString())
+            assertFalse(apply.isEnabled)
+            activity.findViewById<EditText>(R.id.latitude).setText("10.5")
+            assertEquals(activity.getString(R.string.draft_active),
+                activity.findViewById<TextView>(R.id.draft_hint).text.toString())
+            assertTrue(apply.isEnabled)
+            // The next drag continues from where the session stopped; leaving the screen stops it.
+            joystick.touch(MotionEvent.ACTION_DOWN, centerX, joystick.height / 2f)
+            joystick.touch(MotionEvent.ACTION_MOVE, joystick.width + 50f, joystick.height / 2f)
+            val resumed = started.nextStartedService
+            assertEquals(stopped.latitude.toString(), resumed.getStringExtra(MockLocationService.LATITUDE))
+            assertEquals(90f, resumed.getFloatExtra(MockLocationService.BEARING, -1f), 0f)
+            controller.pause()
+            assertEquals(0f, started.nextStartedService.getFloatExtra(MockLocationService.SPEED, -1f), 0f)
+            controller.resume()
+            assertNull(started.nextStartedService)
+            // Another screen (for example, one opened from the notification) moves the session meanwhile;
+            // returning here must continue from there instead of jumping back.
+            service.onStartCommand(Intent(service, MockLocationService::class.java)
+                .setAction(MockLocationService.ACTION_MOVE)
+                .putExtra(MockLocationService.LATITUDE, "10.5")
+                .putExtra(MockLocationService.LONGITUDE, "20.5"), 0, 2)
+            controller.pause().stop().restart().resume()
+            joystick.touch(MotionEvent.ACTION_DOWN, centerX, joystick.height / 2f)
+            joystick.touch(MotionEvent.ACTION_MOVE, centerX, -1000f)
+            val elsewhere = started.nextStartedService
+            assertEquals("10.5", elsewhere.getStringExtra(MockLocationService.LATITUDE))
+            assertEquals("20.5", elsewhere.getStringExtra(MockLocationService.LONGITUDE))
+            joystick.touch(MotionEvent.ACTION_UP, centerX, -1000f)
+        } finally {
+            controller.pause().stop().destroy()
+            serviceController.destroy()
+        }
+    }
+
+    @Test
+    fun joystickTurnsAndSpeedChangesReachTheSessionWithinATenthOfASecond() {
+        val serviceController = Robolectric.buildService(MockLocationService::class.java).create()
+        val service = serviceController.get()
+        service.onStartCommand(Intent(service, MockLocationService::class.java).apply {
+            putExtra(MockLocationService.LATITUDE, "10.0")
+            putExtra(MockLocationService.LONGITUDE, "20.0")
+        }, 0, 1)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            val started = shadowOf(RuntimeEnvironment.getApplication())
+            val joystick = controller.get().findViewById<JoystickView>(R.id.joystick)
+            val centerX = joystick.width / 2f
+            val centerY = joystick.height / 2f
+            joystick.touch(MotionEvent.ACTION_DOWN, centerX, centerY)
+            joystick.touch(MotionEvent.ACTION_MOVE, centerX, -1000f)
+            assertEquals(0f, started.nextStartedService.getFloatExtra(MockLocationService.BEARING, -1f), 0f)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(200))
+            assertNull(started.nextStartedService)
+            joystick.touch(MotionEvent.ACTION_MOVE, joystick.width + 50f, centerY)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
+            val turn = started.nextStartedService
+            assertEquals(90f, turn.getFloatExtra(MockLocationService.BEARING, -1f), 0f)
+            assertEquals(100 / 3.6f, turn.getFloatExtra(MockLocationService.SPEED, 0f), 0.01f)
+            joystick.touch(MotionEvent.ACTION_MOVE, centerX + 13 * joystick.resources.displayMetrics.density, centerY)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(160))
+            val slower = started.nextStartedService
+            assertTrue(slower.getFloatExtra(MockLocationService.SPEED, 99f) < 2f)
+            joystick.touch(MotionEvent.ACTION_UP, centerX, centerY)
+            assertEquals(0f, started.nextStartedService.getFloatExtra(MockLocationService.SPEED, -1f), 0f)
+        } finally {
+            controller.pause().stop().destroy()
+            serviceController.destroy()
         }
     }
 
@@ -511,7 +698,6 @@ class MainActivityTest {
         try {
             val activity = controller.get()
             assertTrue(MockLocationService.isRunning)
-            activity.findViewById<Button>(R.id.pace_walk).performClick()
             val pad = activity.findViewById<CoordinateMapView>(R.id.coordinate_pad)
             pad.event("ready")
             val center = pad.camera()

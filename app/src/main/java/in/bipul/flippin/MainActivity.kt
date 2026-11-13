@@ -24,6 +24,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -51,6 +52,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListener {
@@ -91,6 +94,24 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private var imeVisible = false
     private var setupReady: Boolean? = null
     private var permissionBlocked = false
+    private lateinit var joystick: JoystickView
+    private var moveBearing = 0.0
+    private var moveSpeed = 0.0
+    // Exact position while the joystick is held; the fields show it rounded.
+    private var movePosition: Coordinates? = null
+    private var moveBlocked = false
+    private var lastMoveAt = 0L
+    private var lastSentAt = 0L
+    private var sentBearing = 0.0
+    private var sentSpeed = 0.0
+    // Last location this screen gave the running session.
+    private var liveSent: Coordinates? = null
+    private val moveTick = object : Runnable {
+        override fun run() {
+            advanceMovement()
+            if (moveSpeed > 0.0) joystick.postDelayed(this, MOVE_TICK_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -134,6 +155,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             setOnItemClickListener { _, _, position, _ -> suggestionAdapter.getItem(position)?.let(::selectPlace) }
         }
         findViewById<View>(R.id.search_location).setOnClickListener { searchLocation() }
+        val clearQuery = findViewById<View>(R.id.clear_query)
+        clearQuery.setOnClickListener {
+            query.text.clear()
+            query.requestFocus()
+            query.post {
+                if (query.hasFocus()) getSystemService(InputMethodManager::class.java).showSoftInput(query, 0)
+            }
+        }
         query.setOnFocusChangeListener { _, focused ->
             if (!focused) suggestions.dismiss()
             renderActionBar()
@@ -147,7 +176,10 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         query.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(text: Editable?) = onQueryEdited()
+            override fun afterTextChanged(text: Editable?) {
+                clearQuery.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+                onQueryEdited()
+            }
         })
         pad.onTileFailureChanged = { failed ->
             findViewById<View>(R.id.map_retry).visibility = if (failed) View.VISIBLE else View.GONE
@@ -226,16 +258,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         latitude.addTextChangedListener(watcher)
         longitude.addTextChangedListener(watcher)
-        val initialPace = Pace.entries.firstOrNull { it.name == savedInstanceState?.getString("pace") }
-            ?: Pace.WALK
-        for ((id, pace) in paceButtons()) {
-            findViewById<Button>(id).setOnClickListener { selectPace(pace, focusMap = true) }
-        }
-        selectPace(initialPace, focusMap = false)
-        findViewById<Button>(R.id.nudge_north).setOnClickListener { nudge(1, 0) }
-        findViewById<Button>(R.id.nudge_south).setOnClickListener { nudge(-1, 0) }
-        findViewById<Button>(R.id.nudge_west).setOnClickListener { nudge(0, -1) }
-        findViewById<Button>(R.id.nudge_east).setOnClickListener { nudge(0, 1) }
+        joystick = findViewById(R.id.joystick)
+        joystick.onMove = ::onJoystick
+        joystick.onStep = ::stepJoystick
         findViewById<ImageButton>(R.id.copy_coordinates).setOnClickListener {
             readCoordinates()?.let { point ->
                 getSystemService(ClipboardManager::class.java).setPrimaryClip(
@@ -267,6 +292,9 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onPause() {
+        // Never leave the location moving once the screen is no longer in use.
+        joystick.release()
+        stopMovement()
         pad.pauseMap()
         super.onPause()
     }
@@ -278,6 +306,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onDestroy() {
+        joystick.removeCallbacks(moveTick)
         query.removeCallbacks(suggestTask)
         suggestions.dismiss()
         locationSearch.close()
@@ -286,6 +315,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onStop() {
+        // Another screen (for example, one opened from the notification) may move the session meanwhile.
+        liveSent = null
         monitoringNetwork = false
         connectivity.unregisterNetworkCallback(networkCallback)
         state.unregisterOnSharedPreferenceChangeListener(this)
@@ -293,7 +324,6 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("pace", pad.pace.name)
         outState.putString("selected_pin", selectedPinId)
         outState.putBoolean("setup_expanded", setupExpanded)
         pad.saveCamera(outState)
@@ -548,6 +578,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
                 putExtra(MockLocationService.LATITUDE, point.latitude.toString())
                 putExtra(MockLocationService.LONGITUDE, point.longitude.toString())
             })
+            liveSent = point
             if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
                 Toast.makeText(this, R.string.notifications_disabled, Toast.LENGTH_LONG).show()
             }
@@ -564,7 +595,8 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     }
 
     private fun renderState() {
-        val running = MockLocationService.isRunning && state.getBoolean(MockLocationService.RUNNING, false)
+        val running = sessionRunning()
+        if (!running) liveSent = null
         findViewById<TextView>(R.id.status).apply {
             setText(if (running) R.string.active else R.string.idle)
             isActivated = running
@@ -583,8 +615,31 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             visibility = if (running) View.VISIBLE else View.GONE
         }
         findViewById<Button>(R.id.start).setText(if (running) R.string.apply else R.string.start)
-        findViewById<TextView>(R.id.draft_hint).setText(if (running) R.string.draft_active else R.string.draft_idle)
+        renderDraft()
         showError(state.getString(MockLocationService.ERROR, null))
+        renderMovement()
+    }
+
+    private fun sessionRunning(): Boolean =
+        MockLocationService.isRunning && state.getBoolean(MockLocationService.RUNNING, false)
+
+    private fun liveLocation(): Coordinates? = liveSent ?: MockLocationService.liveAnchor
+
+    /** During a session the joystick updates the live location itself, so Apply is only for a different preview. */
+    private fun renderDraft() {
+        val running = sessionRunning()
+        val preview = Coordinates.parse(latitude.text.toString(), longitude.text.toString())
+        val live = if (running) liveLocation() else null
+        val isLive = running && (moveSpeed > 0.0 || preview != null && preview.rounded() == live?.rounded())
+        findViewById<TextView>(R.id.draft_hint).setText(when {
+            !running -> R.string.draft_idle
+            isLive -> R.string.draft_live
+            else -> R.string.draft_active
+        })
+        findViewById<Button>(R.id.start).apply {
+            isEnabled = !isLive
+            alpha = if (isEnabled) 1f else 0.5f
+        }
     }
 
     private fun renderSetup() {
@@ -671,28 +726,121 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
     }
 
-    private fun paceButtons(): List<Pair<Int, Pace>> = listOf(
-        R.id.pace_walk to Pace.WALK, R.id.pace_run to Pace.RUN, R.id.pace_drive to Pace.DRIVE
-    )
-
-    private fun selectPace(pace: Pace, focusMap: Boolean) {
-        pad.setPace(pace, focusMap)
-        paceButtons().forEach { (id, value) -> findViewById<Button>(id).isSelected = value == pace }
-        findViewById<TextView>(R.id.nudge_step).text = getString(
-            R.string.nudge_step, pace.meters, pace.secondsPerTap.roundToInt(), pace.kilometersPerHour
-        )
-        listOf(
-            R.id.nudge_north to R.string.nudge_north_desc, R.id.nudge_south to R.string.nudge_south_desc,
-            R.id.nudge_west to R.string.nudge_west_desc, R.id.nudge_east to R.string.nudge_east_desc
-        ).forEach { (id, description) -> findViewById<View>(id).contentDescription = getString(description, pace.meters) }
+    private fun onJoystick(bearing: Double, deflection: Double) {
+        val kilometersPerHour = JoystickSpeed.kilometersPerHour(deflection)
+        if (kilometersPerHour == 0.0) {
+            stopMovement()
+            // Releasing lets the next drag retry after an invalid starting point.
+            if (deflection == 0.0) moveBlocked = false
+            return
+        }
+        moveBearing = bearing
+        val starting = moveSpeed == 0.0
+        if (starting) {
+            if (moveBlocked) return
+            movePosition = movementOrigin() ?: run {
+                moveBlocked = true
+                return
+            }
+            lastMoveAt = SystemClock.elapsedRealtime()
+            pad.zoomForMovement()
+            joystick.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            joystick.postDelayed(moveTick, MOVE_TICK_MS)
+        }
+        moveSpeed = kilometersPerHour / 3.6
+        if (starting && sessionRunning()) movePosition?.let { sendMovement(it, moveSpeed) }
+        renderMovement()
     }
 
-    private fun nudge(north: Int, east: Int) {
-        readCoordinates()?.let { point ->
-            val meters = pad.pace.meters.toDouble()
-            setCoordinateInputs(point.moved(north * meters, east * meters))
-            pad.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    private fun stepJoystick(bearing: Double) {
+        if (moveSpeed > 0.0) return
+        val next = (movementOrigin() ?: return).travelled(bearing, STEP_METERS)
+        moveBearing = bearing
+        setCoordinateInputs(next.rounded())
+        pad.zoomForMovement()
+        if (sessionRunning()) sendMovement(next, 0.0)
+        joystick.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+
+    /** During a session the joystick moves the live location, otherwise the preview pin. */
+    private fun movementOrigin(): Coordinates? = if (sessionRunning()) liveLocation() else readCoordinates()
+
+    private fun advanceMovement() {
+        val position = movePosition ?: return
+        val now = SystemClock.elapsedRealtime()
+        val seconds = (now - lastMoveAt).coerceIn(0L, MAX_MOVE_GAP_MS) / 1000.0
+        lastMoveAt = now
+        if (seconds == 0.0 || moveSpeed == 0.0) return
+        val next = position.travelled(moveBearing, moveSpeed * seconds)
+        movePosition = next
+        setCoordinateInputs(next.rounded())
+        val sinceSent = now - lastSentAt
+        // Turns and speed changes go out quickly so the session never projects far along a stale heading.
+        val due = sinceSent >= SEND_INTERVAL_MS || sinceSent >= CHANGE_SEND_MS && velocityChanged()
+        if (sessionRunning() && due) sendMovement(next, moveSpeed)
+    }
+
+    private fun velocityChanged(): Boolean {
+        val turn = abs((moveBearing - sentBearing + 540.0) % 360.0 - 180.0)
+        return turn > 3.0 || abs(moveSpeed - sentSpeed) > max(0.2, sentSpeed * 0.05)
+    }
+
+    private fun stopMovement() {
+        joystick.removeCallbacks(moveTick)
+        if (moveSpeed > 0.0) {
+            advanceMovement()
+            moveSpeed = 0.0
+            if (sessionRunning()) movePosition?.let { sendMovement(it, 0.0) }
+            renderMovement()
+            renderDraft()
         }
+        movePosition = null
+    }
+
+    private fun sendMovement(point: Coordinates, metersPerSecond: Double) {
+        try {
+            startService(Intent(this, MockLocationService::class.java)
+                .setAction(MockLocationService.ACTION_MOVE)
+                .putExtra(MockLocationService.LATITUDE, point.latitude.toString())
+                .putExtra(MockLocationService.LONGITUDE, point.longitude.toString())
+                .putExtra(MockLocationService.SPEED, metersPerSecond.toFloat())
+                .putExtra(MockLocationService.BEARING, moveBearing.toFloat()))
+            liveSent = point
+            lastSentAt = SystemClock.elapsedRealtime()
+            sentBearing = moveBearing
+            sentSpeed = metersPerSecond
+        } catch (error: IllegalStateException) {
+            Log.w(TAG, "Cannot update the live location", error)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Cannot update the live location", error)
+        }
+    }
+
+    private fun renderMovement() {
+        val speed = findViewById<TextView>(R.id.move_speed)
+        val detail = findViewById<TextView>(R.id.move_detail)
+        if (moveSpeed == 0.0) {
+            speed.setText(R.string.move_stopped)
+            detail.setText(if (sessionRunning()) R.string.move_hint_live else R.string.move_hint_preview)
+            return
+        }
+        val kilometersPerHour = moveSpeed * 3.6
+        speed.text = getString(R.string.move_speed, if (kilometersPerHour < 10) {
+            String.format(Locale.ROOT, "%.1f", kilometersPerHour)
+        } else {
+            kilometersPerHour.roundToInt().toString()
+        })
+        detail.text = getString(
+            R.string.move_heading,
+            COMPASS[(moveBearing / 45).roundToInt() % COMPASS.size],
+            moveBearing.roundToInt() % 360,
+            getString(when {
+                kilometersPerHour < 7 -> R.string.pace_walking
+                kilometersPerHour < 14 -> R.string.pace_running
+                kilometersPerHour < 28 -> R.string.pace_cycling
+                else -> R.string.pace_driving
+            })
+        )
     }
 
     @SuppressLint("SetTextI18n")
@@ -730,6 +878,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
             isEnabled = point != null
             alpha = if (isEnabled) 1f else 0.4f
         }
+        renderDraft()
         val container = findViewById<LinearLayout>(R.id.pins)
         for (index in 0 until container.childCount) {
             val row = container.getChildAt(index)
@@ -892,6 +1041,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         private const val SETUP_PERMISSIONS = 2
         private const val MIN_SUGGESTION_LENGTH = 3
         private const val SUGGESTION_DELAY_MS = 350L
+        private const val MOVE_TICK_MS = 50L
+        // Caps the jump after a stalled frame.
+        private const val MAX_MOVE_GAP_MS = 250L
+        private const val SEND_INTERVAL_MS = 500L
+        private const val CHANGE_SEND_MS = 100L
+        private val COMPASS = listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
         private const val TAG = "MainActivity"
     }
 }
